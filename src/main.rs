@@ -177,7 +177,6 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::wasm::WasmGuest;
 
     #[test]

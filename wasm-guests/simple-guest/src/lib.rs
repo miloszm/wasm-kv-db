@@ -2,7 +2,8 @@
 
 use std::alloc::{Layout, alloc as std_alloc, dealloc as std_dealloc};
 
-static mut ALLOCATION: (*mut u8, usize) = (std::ptr::null_mut(), 0);
+#[unsafe(no_mangle)]
+static mut ARG_BUF: [u8; 65536] = [0; 65536];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(size: u32) -> *mut u8 {
@@ -21,32 +22,21 @@ pub extern "C" fn free(ptr: *mut u8) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn set_output(ptr: *mut u8, len: usize) {
-    unsafe { ALLOCATION = (ptr, len) }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_output_len() -> usize {
-    unsafe { ALLOCATION.1 }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn transform(input_ptr: *const u8, input_len: usize) -> *mut u8 {
-    let input = unsafe {
-        std::slice::from_raw_parts(input_ptr, input_len)
-    };
+pub extern "C" fn transform(input_ptr: *const u8, input_len: usize) -> i32 {
+    let input = unsafe { std::slice::from_raw_parts(input_ptr, input_len) };
 
     // example: convert to uppercase
-    let output = input.iter().map(|b| b.to_ascii_uppercase()).collect::<Vec<u8>>();
+    let output = input
+        .iter()
+        .map(|b| b.to_ascii_uppercase())
+        .collect::<Vec<u8>>();
 
-    let output_ptr = alloc(output.len() as u32);
+    let output_ptr = &raw mut ARG_BUF as *mut u8;
 
-    // copy output to allocated memory
+    // copy output to the argument buffer
     unsafe {
         std::ptr::copy_nonoverlapping(output.as_ptr(), output_ptr, output.len());
     }
 
-    set_output(output_ptr, output.len());
-
-    output_ptr
+    output.len() as i32
 }

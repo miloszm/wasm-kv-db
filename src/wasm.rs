@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
 pub struct WasmGuest {
@@ -6,8 +6,8 @@ pub struct WasmGuest {
     memory: Memory,
     alloc: TypedFunc<u32, u32>,            // size -> allocated mem ptr
     free: TypedFunc<u32, ()>,              // mem to free ptr -> ()
-    transform: TypedFunc<(u32, u32), u32>, // input ptr, input len -> output ptr
-    get_output_len: TypedFunc<(), u32>,    // () -> len of the last output
+    transform: TypedFunc<(u32, u32), u32>, // input ptr, input len -> output len
+    arg_buf_ofs: usize,
 }
 
 impl WasmGuest {
@@ -17,7 +17,7 @@ impl WasmGuest {
 
         let mut store = Store::new(&engine, ());
 
-        let mut linker = Linker::new(&engine);
+        let linker = Linker::new(&engine);
 
         let instance = linker.instantiate(&mut store, &module)?;
 
@@ -28,7 +28,11 @@ impl WasmGuest {
         let alloc = instance.get_typed_func::<u32, u32>(&mut store, "alloc")?;
         let free = instance.get_typed_func::<u32, ()>(&mut store, "free")?;
         let transform = instance.get_typed_func::<(u32, u32), u32>(&mut store, "transform")?;
-        let get_output_len = instance.get_typed_func::<(), u32>(&mut store, "get_output_len")?;
+
+        let arg_buf = instance.get_global(&mut store, "ARG_BUF")
+            .ok_or(anyhow!("argument buffer not found"))?;
+        let val = arg_buf.get(&mut store);
+        let arg_buf_ofs = val.i32().ok_or(anyhow!("invalid argument buffer"))? as usize;
 
         Ok(Self {
             store,
@@ -36,7 +40,7 @@ impl WasmGuest {
             alloc,
             free,
             transform,
-            get_output_len,
+            arg_buf_ofs,
         })
     }
 
@@ -47,11 +51,11 @@ impl WasmGuest {
         self.memory
             .write(&mut self.store, input_ptr as usize, input)?;
 
-        let output_ptr = self
+        let output_ptr = self.arg_buf_ofs;
+
+        let output_len = self
             .transform
             .call(&mut self.store, (input_ptr, input_len))?;
-
-        let output_len = self.get_output_len.call(&mut self.store, ())?;
 
         let mut output = vec![0u8; output_len as usize];
         self.memory

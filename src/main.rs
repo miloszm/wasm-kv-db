@@ -1,3 +1,5 @@
+mod wasm;
+
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -170,5 +172,29 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wasm::WasmGuest;
+
+    #[test]
+    pub fn test_wasm_guest() -> Result<(), anyhow::Error> {
+        let wasm_bytes = std::fs::read(
+            "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
+        )?;
+
+        let mut guest = WasmGuest::new(&wasm_bytes)?;
+
+        let input = b"hello";
+
+        let output = guest.transform(input)?;
+
+        println!("Input:  {}", String::from_utf8_lossy(input));
+        println!("Output: {}", String::from_utf8_lossy(&output));
+
+        Ok(())
     }
 }

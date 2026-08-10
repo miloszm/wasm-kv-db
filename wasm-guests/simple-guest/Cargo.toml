@@ -1,0 +1,12 @@
+[package]
+name = "simple-guest"
+version = "0.1.0"
+authors = [
+    "Milosz Muszynski <milosz.muszynski@gmail.com",
+]
+edition = "2024"
+
+[dependencies]
+
+[lib]
+crate-type = ["cdylib", "rlib"]

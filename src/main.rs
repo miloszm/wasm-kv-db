@@ -1,5 +1,7 @@
 mod error;
 mod wasm;
+mod app;
+pub mod storage;
 
 use crate::error::AppError;
 use crate::wasm::WasmGuest;
@@ -17,127 +19,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{info, warn};
-// ------- data models
+use crate::app::AppState;
+use crate::app::handlers::{delete_value, get_value, list_keys, put_value};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KvEntry {
-    pub key: String,
-    pub value: serde_json::Value,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TransformParams {
-    #[serde(default)]
-    pub transform: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    pub error: String,
-}
-
-// -------- state
-
-#[derive(Clone)]
-pub struct AppState {
-    pub store: Arc<DashMap<String, serde_json::Value>>,
-    pub wasm_guest: Arc<Mutex<Option<WasmGuest>>>,
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            store: Arc::new(DashMap::new()),
-            wasm_guest: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    pub fn ensure_wasm_loaded(&self, wasm_path: &str) -> Result<(), AppError> {
-        let mut guard = self.wasm_guest.lock();
-        if guard.is_none() {
-            let wasm_bytes = std::fs::read(wasm_path)?;
-            let guest = WasmGuest::new(&wasm_bytes)?;
-            *guard = Some(guest);
-        }
-        Ok(())
-    }
-}
-
-// --------- handlers
-
-/// GET /kv/{key}
-async fn get_value(
-    State(state): State<AppState>,
-    Path(key): Path<String>,
-    Query(params): Query<TransformParams>,
-) -> impl IntoResponse {
-    let value = match state.store.get(&key) {
-        Some(entry) => entry.value().clone(),
-        None => {
-            let err = ErrorResponse {
-                error: format!("Key '{}' not found", key),
-            };
-            return (StatusCode::NOT_FOUND, Json(err)).into_response();
-        }
-    };
-
-    if params.transform {
-        let mut guest_guard = state.wasm_guest.lock();
-        if let Some(guest) = guest_guard.as_mut() {
-            // let v = serde_json::from_str(r#"{"key": "value"}"#).unwrap();// temp, remove me
-            match guest.transform_json(&value) {
-                Ok(transformed) => return (StatusCode::OK, Json(transformed)).into_response(),
-                Err(e) => {
-                    eprintln!("Wasm transform failed: {}", e);
-                    return (StatusCode::OK, Json(value)).into_response();
-                }
-            }
-        }
-    }
-
-    (StatusCode::OK, Json(value)).into_response()
-}
-
-/// PUT /kv/{key}
-async fn put_value(
-    State(state): State<AppState>,
-    Path(key): Path<String>,
-    Json(value): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    state.store.insert(key.clone(), value.clone());
-    info!("PUT /kv/{} -> stored", key);
-    let response = KvEntry { key, value };
-    (StatusCode::CREATED, Json(response)).into_response()
-}
-
-/// DELETE /kv/{key}
-async fn delete_value(State(state): State<AppState>, Path(key): Path<String>) -> impl IntoResponse {
-    match state.store.remove(&key) {
-        Some((_, value)) => {
-            info!("DELETE /kv/{} -> removed", key);
-            let response = KvEntry { key, value };
-            (StatusCode::OK, Json(response)).into_response()
-        }
-        None => {
-            let err = ErrorResponse {
-                error: format!("Key '{}' not found", key),
-            };
-            (StatusCode::NOT_FOUND, Json(err)).into_response()
-        }
-    }
-}
-
-/// GET /kv
-async fn list_keys(State(state): State<AppState>) -> impl IntoResponse {
-    let keys: Vec<String> = state
-        .store
-        .iter()
-        .map(|entry| entry.key().clone())
-        .collect();
-    (StatusCode::OK, Json(keys)).into_response()
-}
-
-// -------- health check
 
 async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, "OK")

@@ -1,12 +1,10 @@
-use wasm_kv_db::{AppError, Storage, WasmGuest};
+mod common;
+use common::load_guest;
+use wasm_kv_db::{AppError, Storage};
 
 #[test]
 pub fn test_wasm_guest() -> Result<(), AppError> {
-    let wasm_bytes = std::fs::read(
-        "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
-    )?;
-
-    let mut guest = WasmGuest::new(&wasm_bytes)?;
+    let mut guest = load_guest();
 
     let value = serde_json::from_str(
         r#"{"department": "Engineering", "name": "Alice", "personal_email": "alice@gmail.com", "salary": 95000}"#,

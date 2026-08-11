@@ -1,13 +1,11 @@
+mod common;
+use common::load_guest;
 use serde_json::json;
-use wasm_kv_db::{AppError, Storage, WasmGuest};
+use wasm_kv_db::{AppError, Storage};
 
 #[test]
 fn test_storage_with_wasm_transform() -> Result<(), AppError> {
-    // Load the Wasm guest
-    let wasm_bytes = std::fs::read(
-        "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
-    )?;
-    let mut guest = WasmGuest::new(&wasm_bytes)?;
+    let mut guest = load_guest();
 
     let storage = Storage::new();
 
@@ -34,10 +32,7 @@ fn test_storage_with_wasm_transform() -> Result<(), AppError> {
 
 #[test]
 fn test_storage_wasm_transform_nonexistent() -> Result<(), AppError> {
-    let wasm_bytes = std::fs::read(
-        "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
-    )?;
-    let mut guest = WasmGuest::new(&wasm_bytes)?;
+    let mut guest = load_guest();
     let storage = Storage::new();
 
     let result = storage.get_transformed("nonexistent", &mut guest);

@@ -1,5 +1,7 @@
+mod error;
 mod wasm;
 
+use crate::error::AppError;
 use crate::wasm::WasmGuest;
 use axum::extract::Query;
 use axum::{
@@ -15,12 +17,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{info, warn};
-// ---------- DATA MODELS ----------
+// ------- data models
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KvEntry {
     pub key: String,
-    pub value: serde_json::Value, // Flexible JSON value
+    pub value: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,7 +36,7 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-// ---------- APPLICATION STATE ----------
+// -------- state
 
 #[derive(Clone)]
 pub struct AppState {
@@ -50,7 +52,7 @@ impl AppState {
         }
     }
 
-    pub async fn ensure_wasm_loaded(&self, wasm_path: &str) -> Result<(), anyhow::Error> {
+    pub fn ensure_wasm_loaded(&self, wasm_path: &str) -> Result<(), AppError> {
         let mut guard = self.wasm_guest.lock();
         if guard.is_none() {
             let wasm_bytes = std::fs::read(wasm_path)?;
@@ -61,10 +63,9 @@ impl AppState {
     }
 }
 
-// ---------- HANDLERS ----------
+// --------- handlers
 
 /// GET /kv/{key}
-/// Retrieve a value by key
 async fn get_value(
     State(state): State<AppState>,
     Path(key): Path<String>,
@@ -85,9 +86,7 @@ async fn get_value(
         if let Some(guest) = guest_guard.as_mut() {
             // let v = serde_json::from_str(r#"{"key": "value"}"#).unwrap();// temp, remove me
             match guest.transform_json(&value) {
-                Ok(transformed) => {
-                    return (StatusCode::OK, Json(transformed)).into_response();
-                }
+                Ok(transformed) => return (StatusCode::OK, Json(transformed)).into_response(),
                 Err(e) => {
                     eprintln!("Wasm transform failed: {}", e);
                     return (StatusCode::OK, Json(value)).into_response();
@@ -100,23 +99,18 @@ async fn get_value(
 }
 
 /// PUT /kv/{key}
-/// Insert or update a value
 async fn put_value(
     State(state): State<AppState>,
     Path(key): Path<String>,
     Json(value): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    // Insert or update
     state.store.insert(key.clone(), value.clone());
-
     info!("PUT /kv/{} -> stored", key);
-
     let response = KvEntry { key, value };
     (StatusCode::CREATED, Json(response)).into_response()
 }
 
 /// DELETE /kv/{key}
-/// Remove a key
 async fn delete_value(State(state): State<AppState>, Path(key): Path<String>) -> impl IntoResponse {
     match state.store.remove(&key) {
         Some((_, value)) => {
@@ -134,41 +128,32 @@ async fn delete_value(State(state): State<AppState>, Path(key): Path<String>) ->
 }
 
 /// GET /kv
-/// List all keys (optional utility)
 async fn list_keys(State(state): State<AppState>) -> impl IntoResponse {
     let keys: Vec<String> = state
         .store
         .iter()
         .map(|entry| entry.key().clone())
         .collect();
-
     (StatusCode::OK, Json(keys)).into_response()
 }
 
-// ---------- HEALTH CHECK ----------
+// -------- health check
 
 async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, "OK")
 }
 
-// ---------- MAIN ----------
-
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        // .with_env_filter("info")
-        .init();
+async fn main() -> Result<(), AppError> {
+    tracing_subscriber::fmt().init();
 
     info!("Starting Wasm KV Database...");
 
     let state = AppState::new();
 
-    state
-        .ensure_wasm_loaded(
-            "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
-        )
-        .await?;
+    state.ensure_wasm_loaded(
+        "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
+    )?;
 
     let app = Router::new()
         .route("/health", get(health_check))
@@ -195,7 +180,6 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Signal handler for graceful shutdown
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()
@@ -222,10 +206,11 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::AppError;
     use crate::wasm::WasmGuest;
 
     #[test]
-    pub fn test_wasm_guest() -> Result<(), anyhow::Error> {
+    pub fn test_wasm_guest() -> Result<(), AppError> {
         let wasm_bytes = std::fs::read(
             "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
         )?;

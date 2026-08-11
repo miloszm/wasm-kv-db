@@ -6,17 +6,18 @@ use crate::wasm::WasmGuest;
 use dashmap::DashMap;
 use std::path::Path;
 use std::sync::Arc;
+use wasm_kv_db::Storage;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store: Arc<DashMap<String, serde_json::Value>>,
+    pub storage: Storage,
     pub wasm_guests: Arc<DashMap<String, WasmGuest>>, // tenant_id -> WasmGuest
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
-            store: Arc::new(DashMap::new()),
+            storage: Storage::new(),
             wasm_guests: Arc::new(DashMap::new()),
         }
     }

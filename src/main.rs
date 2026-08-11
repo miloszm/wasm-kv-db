@@ -1,7 +1,6 @@
 pub mod app;
 pub mod storage;
 
-use wasm_kv_db::{AppError, error, wasm};
 use crate::app::AppState;
 use crate::app::handlers::{delete_value, get_value, list_keys, put_value};
 use axum::{
@@ -12,6 +11,7 @@ use axum::{
 };
 use tokio::signal;
 use tracing::{info, warn};
+use wasm_kv_db::{AppError, error, wasm};
 
 async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, "OK")

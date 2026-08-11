@@ -1,4 +1,4 @@
-use wasm_kv_db::{AppError, WasmGuest};
+use wasm_kv_db::{AppError, Storage, WasmGuest};
 
 #[test]
 pub fn test_wasm_guest() -> Result<(), AppError> {
@@ -8,15 +8,15 @@ pub fn test_wasm_guest() -> Result<(), AppError> {
 
     let mut guest = WasmGuest::new(&wasm_bytes)?;
 
-    // let input = serde_json::from_str(r#"{"key": "value"}"#)?;
-    let input = serde_json::from_str(
+    let value = serde_json::from_str(
         r#"{"department": "Engineering", "name": "Alice", "personal_email": "alice@gmail.com", "salary": 95000}"#,
     )?;
 
-    let output = guest.transform_json(&input)?;
-
-    println!("Input:  {}", input.to_string());
-    println!("Output: {}", output.to_string());
+    let storage = Storage::new();
+    storage.put("t01:employee:123", value).unwrap();
+    let result = storage.get_transformed("t01:employee:123", &mut guest);
+    assert!(result.is_ok());
+    println!("Output: {}", result.expect("must exist").to_string());
 
     Ok(())
 }

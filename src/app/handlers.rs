@@ -45,7 +45,7 @@ pub(crate) async fn put_value(
     Json(value): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let full_key = format!("{}:{}", tenant, key);
-    let _ = state.storage.put(full_key.as_str(), value.clone());
+    state.storage.put(full_key.as_str(), &value);
     info!("PUT /kv/{}/{} -> stored", tenant, key);
     let response = KvEntry { key, value };
     (StatusCode::CREATED, Json(response)).into_response()

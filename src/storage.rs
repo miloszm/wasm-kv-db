@@ -19,9 +19,8 @@ impl Storage {
     }
 
     /// Insert or update a value
-    pub fn put(&self, key: &str, value: Value) -> Result<Value, AppError> {
+    pub fn put(&self, key: &str, value: &Value) {
         self.store.insert(key.to_string(), value.clone());
-        Ok(value)
     }
 
     /// Retrieve a value by key (without transformation)

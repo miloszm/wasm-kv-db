@@ -1,34 +1,34 @@
 pub mod handlers;
 pub mod models;
 
-use std::sync::Arc;
-use dashmap::DashMap;
-use parking_lot::Mutex;
 use crate::error::AppError;
 use crate::wasm::WasmGuest;
+use dashmap::DashMap;
+use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<DashMap<String, serde_json::Value>>,
-    pub wasm_guest: Arc<Mutex<Option<WasmGuest>>>,
+    pub wasm_guests: Arc<DashMap<String, WasmGuest>>, // tenant_id -> WasmGuest
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             store: Arc::new(DashMap::new()),
-            wasm_guest: Arc::new(Mutex::new(None)),
+            wasm_guests: Arc::new(DashMap::new()),
         }
     }
 
-    pub fn ensure_wasm_loaded(&self, wasm_path: &str) -> Result<(), AppError> {
-        let mut guard = self.wasm_guest.lock();
-        if guard.is_none() {
-            let wasm_bytes = std::fs::read(wasm_path)?;
-            let guest = WasmGuest::new(&wasm_bytes)?;
-            *guard = Some(guest);
-        }
+    pub fn load_wasm_guest(
+        &self,
+        tenant_id: &str,
+        wasm_path: impl AsRef<Path>,
+    ) -> Result<(), AppError> {
+        let wasm_bytes = std::fs::read(wasm_path)?;
+        let guest = WasmGuest::new(&wasm_bytes)?;
+        self.wasm_guests.insert(tenant_id.to_string(), guest);
         Ok(())
     }
 }
-

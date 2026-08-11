@@ -1,27 +1,17 @@
-mod error;
-mod wasm;
-mod app;
+pub mod app;
 pub mod storage;
 
-use crate::error::AppError;
-use crate::wasm::WasmGuest;
-use axum::extract::Query;
+use wasm_kv_db::{AppError, error, wasm};
+use crate::app::AppState;
+use crate::app::handlers::{delete_value, get_value, list_keys, put_value};
 use axum::{
-    Json, Router,
-    extract::{Path, State},
+    Router,
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, put},
 };
-use dashmap::DashMap;
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::signal;
 use tracing::{info, warn};
-use crate::app::AppState;
-use crate::app::handlers::{delete_value, get_value, list_keys, put_value};
-
 
 async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, "OK")
@@ -35,16 +25,20 @@ async fn main() -> Result<(), AppError> {
 
     let state = AppState::new();
 
-    state.ensure_wasm_loaded(
+    // todo: test code to be moved away
+    // guests should be loaded by tenants via REST API
+    // possibly default guests should be provided for new tenants
+    state.load_wasm_guest(
+        "t01",
         "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
     )?;
 
     let app = Router::new()
         .route("/health", get(health_check))
         .route("/kv", get(list_keys))
-        .route("/kv/:key", get(get_value))
-        .route("/kv/:key", put(put_value))
-        .route("/kv/:key", delete(delete_value))
+        .route("/kv/:tenant/:key", get(get_value))
+        .route("/kv/:tenant/:key", put(put_value))
+        .route("/kv/:tenant/:key", delete(delete_value))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
@@ -85,32 +79,5 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::error::AppError;
-    use crate::wasm::WasmGuest;
-
-    #[test]
-    pub fn test_wasm_guest() -> Result<(), AppError> {
-        let wasm_bytes = std::fs::read(
-            "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
-        )?;
-
-        let mut guest = WasmGuest::new(&wasm_bytes)?;
-
-        // let input = serde_json::from_str(r#"{"key": "value"}"#)?;
-        let input = serde_json::from_str(
-            r#"{"department": "Engineering", "name": "Alice", "personal_email": "alice@gmail.com", "salary": 95000}"#,
-        )?;
-
-        let output = guest.transform_json(&input)?;
-
-        println!("Input:  {}", input.to_string());
-        println!("Output: {}", output.to_string());
-
-        Ok(())
     }
 }

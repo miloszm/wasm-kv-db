@@ -15,9 +15,11 @@ pub enum AppError {
     #[error("Wasm guest error: {0}")]
     WasmGuest(String),
 
+    #[allow(unused)]
     #[error("Key not found: {0}")]
     KeyNotFound(String),
 
+    #[allow(unused)]
     #[error("Wasm module not loaded")]
     WasmNotLoaded,
 }

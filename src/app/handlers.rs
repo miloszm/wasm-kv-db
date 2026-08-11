@@ -13,9 +13,9 @@ pub(crate) async fn get_value(
     Query(params): Query<TransformParams>,
 ) -> impl IntoResponse {
     let full_key = format!("{}:{}", tenant, key);
-    let value = match state.store.get(&full_key) {
-        Some(entry) => entry.value().clone(),
-        None => {
+    let value = match state.storage.get_raw(&full_key) {
+        Ok(value) => value.clone(),
+        Err(_) => {
             let err = ErrorResponse {
                 error: format!("Key '{}/{}' not found", tenant, key),
             };
@@ -45,7 +45,7 @@ pub(crate) async fn put_value(
     Json(value): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let full_key = format!("{}:{}", tenant, key);
-    state.store.insert(full_key, value.clone());
+    let _ = state.storage.put(full_key.as_str(), value.clone());
     info!("PUT /kv/{}/{} -> stored", tenant, key);
     let response = KvEntry { key, value };
     (StatusCode::CREATED, Json(response)).into_response()
@@ -57,13 +57,13 @@ pub(crate) async fn delete_value(
     Path((tenant, key)): Path<(String, String)>,
 ) -> impl IntoResponse {
     let full_key = format!("{}:{}", tenant, key);
-    match state.store.remove(&full_key) {
-        Some((_, value)) => {
+    match state.storage.delete(&full_key) {
+        Ok(value) => {
             info!("DELETE /kv/{}/{} -> removed", tenant, key);
             let response = KvEntry { key, value };
             (StatusCode::OK, Json(response)).into_response()
         }
-        None => {
+        Err(_) => {
             let err = ErrorResponse {
                 error: format!("Key '{}/{}' not found", tenant, key),
             };
@@ -74,10 +74,6 @@ pub(crate) async fn delete_value(
 
 /// GET /kv
 pub(crate) async fn list_keys(State(state): State<AppState>) -> impl IntoResponse {
-    let keys: Vec<String> = state
-        .store
-        .iter()
-        .map(|entry| entry.key().clone())
-        .collect();
+    let keys: Vec<String> = state.storage.list_keys();
     (StatusCode::OK, Json(keys)).into_response()
 }

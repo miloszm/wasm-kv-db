@@ -32,17 +32,6 @@ impl Storage {
             .ok_or_else(|| AppError::KeyNotFound(key.to_string()))
     }
 
-    /// Retrieve a value by key with optional Wasm transformation
-    pub fn get_transformed(
-        &self,
-        key: &str,
-        wasm_guest: &mut crate::wasm::WasmGuest,
-    ) -> Result<Value, AppError> {
-        let value = self.get_raw(key)?;
-        let transformed = wasm_guest.transform_json(&value)?;
-        Ok(transformed)
-    }
-
     /// Delete a key
     pub fn delete(&self, key: &str) -> Result<Value, AppError> {
         self.store

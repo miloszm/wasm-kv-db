@@ -2,12 +2,12 @@ pub mod app;
 pub mod storage;
 
 use crate::app::AppState;
-use crate::app::handlers::{delete_value, get_value, list_keys, put_value};
+use crate::app::handlers::{execute, get_value, list_keys};
 use axum::{
     Router,
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, put},
+    routing::{get, put},
 };
 use tokio::signal;
 use tracing::{info, warn};
@@ -37,8 +37,7 @@ async fn main() -> Result<(), AppError> {
         .route("/health", get(health_check))
         .route("/kv", get(list_keys))
         .route("/kv/:tenant/:key", get(get_value))
-        .route("/kv/:tenant/:key", put(put_value))
-        .route("/kv/:tenant/:key", delete(delete_value))
+        .route("/kv/:tenant/:name", put(execute))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;

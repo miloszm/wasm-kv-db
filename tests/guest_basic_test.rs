@@ -7,14 +7,12 @@ use wasm_kv_db::AppError;
 pub fn test_wasm_guest() -> Result<(), AppError> {
     let mut guest = load_guest();
 
-    let input = serde_json::from_str(
-        r#"{"department": "Engineering", "name": "Alice", "personal_email": "alice@gmail.com", "salary": 95000}"#,
-    )?;
+    let input = vec![0x01, 0x02];
 
-    let output = guest.transform_json(&input)?;
+    let output = guest.execute(&input)?;
 
-    println!("Input:  {}", input.to_string());
-    println!("Output: {}", output.to_string());
+    println!("Input:  {:?}", input);
+    println!("Output: {:?}", hex::encode(output));
 
     Ok(())
 }

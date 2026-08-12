@@ -1,11 +1,10 @@
 use crate::error::AppError;
-use serde_json::Value;
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
 pub struct WasmGuest {
     store: Store<()>,
     memory: Memory,
-    transform: TypedFunc<u32, u32>, // input len -> output len
+    execute: TypedFunc<u32, u32>, // input len -> output len
     arg_buf_ofs: usize,
 }
 
@@ -24,9 +23,9 @@ impl WasmGuest {
             .get_memory(&mut store, "memory")
             .ok_or_else(|| AppError::WasmGuest("guest must export memory".to_string()))?;
 
-        let transform = instance
-            .get_typed_func::<u32, u32>(&mut store, "transform")
-            .map_err(|e| AppError::WasmGuest(format!("failed to get transform: {}", e)))?;
+        let execute = instance
+            .get_typed_func::<u32, u32>(&mut store, "execute")
+            .map_err(|e| AppError::WasmGuest(format!("failed to get execute: {}", e)))?;
 
         let arg_buf = instance
             .get_global(&mut store, "ARG_BUF")
@@ -39,20 +38,12 @@ impl WasmGuest {
         Ok(Self {
             store,
             memory,
-            transform,
+            execute,
             arg_buf_ofs,
         })
     }
 
-    /// Transforms a JSON value using the Wasm guest
-    pub fn transform_json(&mut self, input: &Value) -> Result<Value, AppError> {
-        let input_bytes = serde_json::to_vec(input)?;
-        let output_bytes = self.transform_bytes(&input_bytes)?;
-        let output: Value = serde_json::from_slice(&output_bytes)?;
-        Ok(output)
-    }
-
-    pub fn transform_bytes(&mut self, input: &[u8]) -> Result<Vec<u8>, AppError> {
+    pub fn execute(&mut self, input: &[u8]) -> Result<Vec<u8>, AppError> {
         let argbuf_ptr = self.arg_buf_ofs;
         let input_len = input.len() as u32;
 
@@ -69,7 +60,7 @@ impl WasmGuest {
             .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
 
         let output_len = self
-            .transform
+            .execute
             .call(&mut self.store, input_len)
             .map_err(|e| AppError::WasmGuest(format!("transform failed: {}", e)))?;
 

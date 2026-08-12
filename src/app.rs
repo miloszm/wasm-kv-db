@@ -26,9 +26,10 @@ impl AppState {
         &self,
         tenant_id: &str,
         wasm_path: impl AsRef<Path>,
+        storage: Storage,
     ) -> Result<(), AppError> {
         let wasm_bytes = std::fs::read(wasm_path)?;
-        let guest = WasmGuest::new(&wasm_bytes)?;
+        let guest = WasmGuest::new(&wasm_bytes, storage)?;
         self.wasm_guests.insert(tenant_id.to_string(), guest);
         Ok(())
     }

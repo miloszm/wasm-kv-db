@@ -12,7 +12,7 @@ pub(crate) async fn get_value(
     Path((tenant, key)): Path<(String, String)>,
 ) -> impl IntoResponse {
     let full_key = format!("{}:{}", tenant, key);
-    let value = match state.storage.get_raw(&full_key) {
+    let value = match state.storage.get(&full_key) {
         Ok(value) => value.clone(),
         Err(_) => {
             let err = ErrorResponse {

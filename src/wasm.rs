@@ -1,21 +1,30 @@
+use crate::Storage;
 use crate::error::AppError;
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
+pub struct WasmState {
+    pub storage: Storage,
+}
+
 pub struct WasmGuest {
-    store: Store<()>,
+    store: Store<WasmState>,
     memory: Memory,
     execute: TypedFunc<u32, u32>, // input len -> output len
     arg_buf_ofs: usize,
 }
 
 impl WasmGuest {
-    pub fn new(wasm_bytes: &[u8]) -> Result<Self, AppError> {
+    pub fn new(wasm_bytes: &[u8], storage: Storage) -> Result<Self, AppError> {
         let engine = Engine::default();
         let module = Module::new(&engine, wasm_bytes)?;
 
-        let mut store = Store::new(&engine, ());
+        let mut store = Store::new(&engine, WasmState { storage });
 
-        let linker = Linker::new(&engine);
+        let mut linker = Linker::new(&engine);
+
+        linker
+            .func_wrap("env", "host_put", WasmGuest::host_put)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_put: {}", e)))?;
 
         let instance = linker.instantiate(&mut store, &module)?;
 
@@ -77,5 +86,35 @@ impl WasmGuest {
             .map_err(|e| AppError::WasmGuest(format!("failed to read output: {}", e)))?;
 
         Ok(output)
+    }
+
+    fn host_put(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> Result<u32, wasmtime::Error> {
+        // Get memory from the instance
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => return Ok(1), // Error: no memory export
+        };
+
+        // Read key from guest memory
+        let mut key_bytes = vec![0u8; key_len as usize];
+        memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
+        let key =
+            String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
+
+        // Read value from guest memory
+        let mut value_bytes = vec![0u8; value_len as usize];
+        memory.read(&mut caller, value_ptr as usize, &mut value_bytes)?;
+
+        let storage = &caller.data().storage;
+        match storage.put(&key, value_bytes) {
+            Ok(_) => Ok(0),
+            Err(_) => Ok(1),
+        }
     }
 }

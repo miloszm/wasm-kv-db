@@ -31,6 +31,7 @@ async fn main() -> Result<(), AppError> {
     state.load_wasm_guest(
         "t01",
         "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
+        state.storage.clone(),
     )?;
 
     let app = Router::new()

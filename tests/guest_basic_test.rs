@@ -1,18 +1,22 @@
 mod common;
 
 use common::load_guest;
-use wasm_kv_db::AppError;
+use wasm_kv_db::{AppError, Storage};
 
 #[test]
 pub fn test_wasm_guest() -> Result<(), AppError> {
-    let mut guest = load_guest();
+    let storage = Storage::new();
+    let mut guest = load_guest(storage.clone());
 
-    let input = vec![0x01, 0x02];
+    let input = b"t01:k1".to_vec();
 
     let output = guest.execute(&input)?;
 
-    println!("Input:  {:?}", input);
+    let stored = storage.get("t01:k1")?;
+
+    println!("Input:  {}", String::from_utf8_lossy(&input));
     println!("Output: {:?}", hex::encode(output));
+    println!("Stored:  {}", String::from_utf8_lossy(&stored));
 
     Ok(())
 }

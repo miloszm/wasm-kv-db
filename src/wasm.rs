@@ -26,6 +26,10 @@ impl WasmGuest {
             .func_wrap("env", "host_put", WasmGuest::host_put)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_put: {}", e)))?;
 
+        linker
+            .func_wrap("env", "host_get", WasmGuest::host_get)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_get: {}", e)))?;
+
         let instance = linker.instantiate(&mut store, &module)?;
 
         let memory = instance
@@ -88,6 +92,8 @@ impl WasmGuest {
         Ok(output)
     }
 
+    /// puts key, value into host's KV store
+    /// returns 0 on success
     fn host_put(
         mut caller: wasmtime::Caller<'_, WasmState>,
         key_ptr: u32,
@@ -101,13 +107,13 @@ impl WasmGuest {
             _ => return Ok(1), // Error: no memory export
         };
 
-        // Read key from guest memory
+        // key
         let mut key_bytes = vec![0u8; key_len as usize];
         memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
         let key =
             String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
 
-        // Read value from guest memory
+        // value
         let mut value_bytes = vec![0u8; value_len as usize];
         memory.read(&mut caller, value_ptr as usize, &mut value_bytes)?;
 
@@ -116,5 +122,38 @@ impl WasmGuest {
             Ok(_) => Ok(0),
             Err(_) => Ok(1),
         }
+    }
+
+    /// gets value from host store
+    /// returns 0 if not found, otherwise length of the found value
+    fn host_get(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> Result<u32, wasmtime::Error> {
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => return Ok(0),
+        };
+
+        // key
+        let mut key_bytes = vec![0u8; key_len as usize];
+        memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
+        let key =
+            String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
+
+        // get value from storage
+        let storage = &caller.data().storage;
+        let value = match storage.get(&key) {
+            Ok(v) => v,
+            Err(_) => return Ok(0),
+        };
+
+        let write_len = value.len().min(value_len as usize);
+        memory.write(&mut caller, value_ptr as usize, &value[..write_len])?;
+
+        Ok(value.len() as u32)
     }
 }

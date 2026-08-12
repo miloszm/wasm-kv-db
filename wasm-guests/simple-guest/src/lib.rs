@@ -1,4 +1,8 @@
 // cargo build --target wasm32-unknown-unknown
+use dlmalloc::GlobalDlmalloc;
+
+#[global_allocator]
+static ALLOC: GlobalDlmalloc = GlobalDlmalloc;
 
 const ARG_BUF_SIZE: usize = 65536;
 

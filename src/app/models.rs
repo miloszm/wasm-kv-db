@@ -6,12 +6,6 @@ pub struct KvEntry {
     pub value: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct TransformParams {
-    #[serde(default)]
-    pub transform: bool,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,

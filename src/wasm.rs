@@ -1,22 +1,34 @@
+use crate::Storage;
 use crate::error::AppError;
-use serde_json::Value;
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
+pub struct WasmState {
+    pub storage: Storage,
+}
+
 pub struct WasmGuest {
-    store: Store<()>,
+    store: Store<WasmState>,
     memory: Memory,
-    transform: TypedFunc<u32, u32>, // input len -> output len
+    execute: TypedFunc<u32, u32>, // input len -> output len
     arg_buf_ofs: usize,
 }
 
 impl WasmGuest {
-    pub fn new(wasm_bytes: &[u8]) -> Result<Self, AppError> {
+    pub fn new(wasm_bytes: &[u8], storage: Storage) -> Result<Self, AppError> {
         let engine = Engine::default();
         let module = Module::new(&engine, wasm_bytes)?;
 
-        let mut store = Store::new(&engine, ());
+        let mut store = Store::new(&engine, WasmState { storage });
 
-        let linker = Linker::new(&engine);
+        let mut linker = Linker::new(&engine);
+
+        linker
+            .func_wrap("env", "host_put", WasmGuest::host_put)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_put: {}", e)))?;
+
+        linker
+            .func_wrap("env", "host_get", WasmGuest::host_get)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_get: {}", e)))?;
 
         let instance = linker.instantiate(&mut store, &module)?;
 
@@ -24,9 +36,9 @@ impl WasmGuest {
             .get_memory(&mut store, "memory")
             .ok_or_else(|| AppError::WasmGuest("guest must export memory".to_string()))?;
 
-        let transform = instance
-            .get_typed_func::<u32, u32>(&mut store, "transform")
-            .map_err(|e| AppError::WasmGuest(format!("failed to get transform: {}", e)))?;
+        let execute = instance
+            .get_typed_func::<u32, u32>(&mut store, "execute")
+            .map_err(|e| AppError::WasmGuest(format!("failed to get execute: {}", e)))?;
 
         let arg_buf = instance
             .get_global(&mut store, "ARG_BUF")
@@ -39,20 +51,12 @@ impl WasmGuest {
         Ok(Self {
             store,
             memory,
-            transform,
+            execute,
             arg_buf_ofs,
         })
     }
 
-    /// Transforms a JSON value using the Wasm guest
-    pub fn transform_json(&mut self, input: &Value) -> Result<Value, AppError> {
-        let input_bytes = serde_json::to_vec(input)?;
-        let output_bytes = self.transform_bytes(&input_bytes)?;
-        let output: Value = serde_json::from_slice(&output_bytes)?;
-        Ok(output)
-    }
-
-    pub fn transform_bytes(&mut self, input: &[u8]) -> Result<Vec<u8>, AppError> {
+    pub fn execute(&mut self, input: &[u8]) -> Result<Vec<u8>, AppError> {
         let argbuf_ptr = self.arg_buf_ofs;
         let input_len = input.len() as u32;
 
@@ -69,7 +73,7 @@ impl WasmGuest {
             .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
 
         let output_len = self
-            .transform
+            .execute
             .call(&mut self.store, input_len)
             .map_err(|e| AppError::WasmGuest(format!("transform failed: {}", e)))?;
 
@@ -86,5 +90,70 @@ impl WasmGuest {
             .map_err(|e| AppError::WasmGuest(format!("failed to read output: {}", e)))?;
 
         Ok(output)
+    }
+
+    /// puts key, value into host's KV store
+    /// returns 0 on success
+    fn host_put(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> Result<u32, wasmtime::Error> {
+        // Get memory from the instance
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => return Ok(1), // Error: no memory export
+        };
+
+        // key
+        let mut key_bytes = vec![0u8; key_len as usize];
+        memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
+        let key =
+            String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
+
+        // value
+        let mut value_bytes = vec![0u8; value_len as usize];
+        memory.read(&mut caller, value_ptr as usize, &mut value_bytes)?;
+
+        let storage = &caller.data().storage;
+        match storage.put(&key, value_bytes) {
+            Ok(_) => Ok(0),
+            Err(_) => Ok(1),
+        }
+    }
+
+    /// gets value from host store
+    /// returns 0 if not found, otherwise length of the found value
+    fn host_get(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> Result<u32, wasmtime::Error> {
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => return Ok(0),
+        };
+
+        // key
+        let mut key_bytes = vec![0u8; key_len as usize];
+        memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
+        let key =
+            String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
+
+        // get value from storage
+        let storage = &caller.data().storage;
+        let value = match storage.get(&key) {
+            Ok(v) => v,
+            Err(_) => return Ok(0),
+        };
+
+        let write_len = value.len().min(value_len as usize);
+        memory.write(&mut caller, value_ptr as usize, &value[..write_len])?;
+
+        Ok(value.len() as u32)
     }
 }

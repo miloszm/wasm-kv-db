@@ -33,7 +33,8 @@ pub(crate) async fn execute(
     body: Bytes,
 ) -> impl IntoResponse {
     if let Some(mut guest) = state.wasm_guests.get_mut(&tenant) {
-        match guest.execute(&body) {
+        let name_bytes = name.as_bytes();
+        match guest.execute(&name_bytes, &body) {
             Ok(result) => (StatusCode::OK, Json(result)).into_response(),
             Err(e) => {
                 eprintln!("Wasm execution failed: {}", e);

@@ -9,7 +9,7 @@ pub struct WasmState {
 pub struct WasmGuest {
     store: Store<WasmState>,
     memory: Memory,
-    execute: TypedFunc<u32, u32>, // input len -> output len
+    execute: TypedFunc<(u32, u32), u32>, // input len -> output len
     arg_buf_ofs: usize,
 }
 
@@ -37,7 +37,7 @@ impl WasmGuest {
             .ok_or_else(|| AppError::WasmGuest("guest must export memory".to_string()))?;
 
         let execute = instance
-            .get_typed_func::<u32, u32>(&mut store, "execute")
+            .get_typed_func::<(u32, u32), u32>(&mut store, "execute")
             .map_err(|e| AppError::WasmGuest(format!("failed to get execute: {}", e)))?;
 
         let arg_buf = instance
@@ -56,25 +56,31 @@ impl WasmGuest {
         })
     }
 
-    pub fn execute(&mut self, input: &[u8]) -> Result<Vec<u8>, AppError> {
-        let argbuf_ptr = self.arg_buf_ofs;
-        let input_len = input.len() as u32;
+    pub fn execute(&mut self, name: &[u8], args: &[u8]) -> Result<Vec<u8>, AppError> {
+        let input_len = name.len() as u32;
+        let args_len = args.len() as u32;
+        let name_ptr = self.arg_buf_ofs;
+        let argbuf_ptr = self.arg_buf_ofs + input_len as usize;
 
         // Check buffer capacity
-        if input.len() > 65536 {
+        if input_len + args_len > 65536 {
             return Err(AppError::WasmGuest(format!(
                 "input too large: {} bytes (max 65536)",
-                input.len()
+                name.len()
             )));
         }
 
         self.memory
-            .write(&mut self.store, argbuf_ptr, input)
+            .write(&mut self.store, name_ptr, name)
+            .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
+
+        self.memory
+            .write(&mut self.store, argbuf_ptr, args)
             .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
 
         let output_len = self
             .execute
-            .call(&mut self.store, input_len)
+            .call(&mut self.store, (input_len, args_len))
             .map_err(|e| AppError::WasmGuest(format!("transform failed: {}", e)))?;
 
         if output_len as usize > 65536 {
@@ -86,7 +92,7 @@ impl WasmGuest {
 
         let mut output = vec![0u8; output_len as usize];
         self.memory
-            .read(&mut self.store, argbuf_ptr, &mut output)
+            .read(&mut self.store, name_ptr, &mut output)
             .map_err(|e| AppError::WasmGuest(format!("failed to read output: {}", e)))?;
 
         Ok(output)

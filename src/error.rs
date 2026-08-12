@@ -20,3 +20,9 @@ pub enum AppError {
     #[error("Wasm module not loaded")]
     WasmNotLoaded,
 }
+
+impl From<std::string::FromUtf8Error> for AppError {
+    fn from(e: std::string::FromUtf8Error) -> Self {
+        AppError::WasmGuest(format!("Invalid UTF-8: {}", e))
+    }
+}

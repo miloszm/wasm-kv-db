@@ -15,10 +15,11 @@ unsafe extern "C" {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn execute(input_len: usize) -> i32 {
-    let buf_ptr = &raw mut ARG_BUF as *mut u8;
+pub extern "C" fn execute(name_len: usize, args_len: usize) -> i32 {
+    let name_ptr = &raw mut ARG_BUF as *mut u8;
+    let buf_ptr = unsafe { name_ptr.add(name_len) };
 
-    let input_key = unsafe { std::slice::from_raw_parts(buf_ptr, input_len) }.to_vec();
+    let input_key = unsafe { std::slice::from_raw_parts(buf_ptr, args_len) }.to_vec();
 
     let k2_key = b"t01:k2".to_vec();
 

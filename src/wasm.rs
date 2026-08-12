@@ -4,21 +4,35 @@ use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
 pub struct WasmState {
     pub storage: Storage,
+    pub user_id: String,
+}
+
+impl WasmState {
+    pub fn new(storage: Storage, user_id: String) -> Self {
+        Self { storage, user_id }
+    }
 }
 
 pub struct WasmGuest {
     store: Store<WasmState>,
     memory: Memory,
-    execute: TypedFunc<u32, u32>, // input len -> output len
+    execute: TypedFunc<(u32, u32), u32>, // input len -> output len
     arg_buf_ofs: usize,
 }
 
 impl WasmGuest {
-    pub fn new(wasm_bytes: &[u8], storage: Storage) -> Result<Self, AppError> {
+    pub fn new(
+        wasm_bytes: &[u8],
+        storage: Storage,
+        user_id: impl AsRef<str>,
+    ) -> Result<Self, AppError> {
         let engine = Engine::default();
         let module = Module::new(&engine, wasm_bytes)?;
 
-        let mut store = Store::new(&engine, WasmState { storage });
+        let mut store = Store::new(
+            &engine,
+            WasmState::new(storage, user_id.as_ref().to_string()),
+        );
 
         let mut linker = Linker::new(&engine);
 
@@ -30,6 +44,10 @@ impl WasmGuest {
             .func_wrap("env", "host_get", WasmGuest::host_get)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_get: {}", e)))?;
 
+        linker
+            .func_wrap("env", "host_caller", WasmGuest::host_caller)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_caller: {}", e)))?;
+
         let instance = linker.instantiate(&mut store, &module)?;
 
         let memory = instance
@@ -37,7 +55,7 @@ impl WasmGuest {
             .ok_or_else(|| AppError::WasmGuest("guest must export memory".to_string()))?;
 
         let execute = instance
-            .get_typed_func::<u32, u32>(&mut store, "execute")
+            .get_typed_func::<(u32, u32), u32>(&mut store, "execute")
             .map_err(|e| AppError::WasmGuest(format!("failed to get execute: {}", e)))?;
 
         let arg_buf = instance
@@ -56,25 +74,31 @@ impl WasmGuest {
         })
     }
 
-    pub fn execute(&mut self, input: &[u8]) -> Result<Vec<u8>, AppError> {
-        let argbuf_ptr = self.arg_buf_ofs;
-        let input_len = input.len() as u32;
+    pub fn execute(&mut self, name: &[u8], args: &[u8]) -> Result<Vec<u8>, AppError> {
+        let input_len = name.len() as u32;
+        let args_len = args.len() as u32;
+        let name_ptr = self.arg_buf_ofs;
+        let argbuf_ptr = self.arg_buf_ofs + input_len as usize;
 
         // Check buffer capacity
-        if input.len() > 65536 {
+        if input_len + args_len > 65536 {
             return Err(AppError::WasmGuest(format!(
                 "input too large: {} bytes (max 65536)",
-                input.len()
+                name.len()
             )));
         }
 
         self.memory
-            .write(&mut self.store, argbuf_ptr, input)
+            .write(&mut self.store, name_ptr, name)
+            .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
+
+        self.memory
+            .write(&mut self.store, argbuf_ptr, args)
             .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
 
         let output_len = self
             .execute
-            .call(&mut self.store, input_len)
+            .call(&mut self.store, (input_len, args_len))
             .map_err(|e| AppError::WasmGuest(format!("transform failed: {}", e)))?;
 
         if output_len as usize > 65536 {
@@ -86,7 +110,7 @@ impl WasmGuest {
 
         let mut output = vec![0u8; output_len as usize];
         self.memory
-            .read(&mut self.store, argbuf_ptr, &mut output)
+            .read(&mut self.store, name_ptr, &mut output)
             .map_err(|e| AppError::WasmGuest(format!("failed to read output: {}", e)))?;
 
         Ok(output)
@@ -100,11 +124,14 @@ impl WasmGuest {
         key_len: u32,
         value_ptr: u32,
         value_len: u32,
-    ) -> Result<u32, wasmtime::Error> {
+    ) -> Result<i32, wasmtime::Error> {
         // Get memory from the instance
         let memory = match caller.get_export("memory") {
             Some(wasmtime::Extern::Memory(mem)) => mem,
-            _ => return Ok(1), // Error: no memory export
+            _ => {
+                eprintln!("host_put: memory export not found");
+                return Ok(-99);
+            }
         };
 
         // key
@@ -120,7 +147,10 @@ impl WasmGuest {
         let storage = &caller.data().storage;
         match storage.put(&key, value_bytes) {
             Ok(_) => Ok(0),
-            Err(_) => Ok(1),
+            Err(_) => {
+                eprintln!("host_put: storage insertion failed");
+                Ok(-99)
+            }
         }
     }
 
@@ -132,10 +162,13 @@ impl WasmGuest {
         key_len: u32,
         value_ptr: u32,
         value_len: u32,
-    ) -> Result<u32, wasmtime::Error> {
+    ) -> Result<i32, wasmtime::Error> {
         let memory = match caller.get_export("memory") {
             Some(wasmtime::Extern::Memory(mem)) => mem,
-            _ => return Ok(0),
+            _ => {
+                eprintln!("host_get: memory export not found");
+                return Ok(-99);
+            }
         };
 
         // key
@@ -148,12 +181,37 @@ impl WasmGuest {
         let storage = &caller.data().storage;
         let value = match storage.get(&key) {
             Ok(v) => v,
-            Err(_) => return Ok(0),
+            Err(_) => {
+                eprintln!("host_get: not found");
+                return Ok(-1);
+            }
         };
 
         let write_len = value.len().min(value_len as usize);
         memory.write(&mut caller, value_ptr as usize, &value[..write_len])?;
 
-        Ok(value.len() as u32)
+        Ok(value.len() as i32)
+    }
+
+    /// returns user id that is calling the guest
+    fn host_caller(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> Result<i32, wasmtime::Error> {
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => {
+                eprintln!("host_get: memory export not found");
+                return Ok(-99);
+            }
+        };
+
+        let user_id_bytes = caller.data().user_id.as_bytes().to_vec();
+        if user_id_bytes.len() > value_len as usize {
+            return Ok(-3);
+        }
+        memory.write(&mut caller, value_ptr as usize, &user_id_bytes)?;
+        Ok(user_id_bytes.len() as i32)
     }
 }

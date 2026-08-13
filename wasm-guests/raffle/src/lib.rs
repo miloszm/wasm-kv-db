@@ -24,7 +24,7 @@ unsafe extern "C" {
         key_len: usize,
         value_ptr: *const u8,
         value_len: usize,
-    ) -> ();
+    ) -> i32;
     fn host_caller(caller_ptr: *const u8, caller_len: usize) -> i32;
     fn host_rand(max: u32) -> u32;
 }
@@ -131,19 +131,31 @@ pub fn from_msgpack<T: DeserializeOwned>(data: &[u8]) -> Result<T, ReducerError>
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn execute(name_len: usize, _args_len: usize) -> i32 {
+pub extern "C" fn execute(name_len: usize, args_len: usize) -> i32 {
     let name_ptr = &raw mut ARG_BUF as *mut u8;
     let buf_ptr = unsafe { name_ptr.add(name_len) };
 
     let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len) }.to_vec();
     let name = String::from_utf8(name_bytes).unwrap_or("".to_string());
 
-    let output_bytes = name.as_bytes();
-    unsafe {
-        std::ptr::copy(output_bytes.as_ptr(), buf_ptr, name_len);
-    }
+    let args_bytes = unsafe { std::slice::from_raw_parts(buf_ptr, args_len) };
+    let result = match name.as_str() {
+        "create_raffle" => execute_create_raffle(args_bytes),
+        "buy_ticket" => execute_buy_ticket(args_bytes),
+        "draw_winner" => execute_draw_winner(args_bytes),
+        _ => return -2, // invalid input
+    };
 
-    name_len as i32
+    match result {
+        Ok(v) => unsafe {
+            std::ptr::copy(v.as_ptr(), name_ptr, v.len());
+            v.len() as i32
+        },
+        Err(e) => {
+            eprintln!("Reducer error {e} when executing {name}");
+            -99
+        }
+    }
 }
 
 fn execute_create_raffle(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {

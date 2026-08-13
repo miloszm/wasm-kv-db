@@ -18,6 +18,36 @@ unsafe extern "C" {
     fn host_get(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuestError {
+    Success = 0,
+    KeyNotFound = -1,
+    InvalidInput = -2,
+    BufferTooSmall = -3,
+    OutOfMemory = -4,
+    PermissionDenied = -5,
+    Internal = -99,
+}
+
+impl GuestError {
+    pub fn as_i32(&self) -> i32 {
+        *self as i32
+    }
+
+    pub fn from_i32(code: i32) -> Self {
+        match code {
+            -1 => GuestError::KeyNotFound,
+            -2 => GuestError::InvalidInput,
+            -3 => GuestError::BufferTooSmall,
+            -4 => GuestError::OutOfMemory,
+            -5 => GuestError::PermissionDenied,
+            -99 => GuestError::Internal,
+            _ => GuestError::Internal,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateRaffleArgs {
     pub raffle_id: String,

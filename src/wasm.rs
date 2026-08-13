@@ -106,7 +106,7 @@ impl WasmGuest {
         key_len: u32,
         value_ptr: u32,
         value_len: u32,
-    ) -> Result<u32, wasmtime::Error> {
+    ) -> Result<i32, wasmtime::Error> {
         // Get memory from the instance
         let memory = match caller.get_export("memory") {
             Some(wasmtime::Extern::Memory(mem)) => mem,
@@ -138,7 +138,7 @@ impl WasmGuest {
         key_len: u32,
         value_ptr: u32,
         value_len: u32,
-    ) -> Result<u32, wasmtime::Error> {
+    ) -> Result<i32, wasmtime::Error> {
         let memory = match caller.get_export("memory") {
             Some(wasmtime::Extern::Memory(mem)) => mem,
             _ => return Ok(0),
@@ -160,6 +160,6 @@ impl WasmGuest {
         let write_len = value.len().min(value_len as usize);
         memory.write(&mut caller, value_ptr as usize, &value[..write_len])?;
 
-        Ok(value.len() as u32)
+        Ok(value.len() as i32)
     }
 }

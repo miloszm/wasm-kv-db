@@ -31,12 +31,29 @@ impl Storage {
             .ok_or_else(|| AppError::KeyNotFound(key.to_string()))
     }
 
+    /// Retrieve length of a value by key
+    pub fn get_len(&self, key: &str) -> Result<usize, AppError> {
+        self.store
+            .get(key)
+            .map(|entry| entry.value().len())
+            .ok_or_else(|| AppError::KeyNotFound(key.to_string()))
+    }
+
     /// Delete a key
     pub fn delete(&self, key: &str) -> Result<Vec<u8>, AppError> {
         self.store
             .remove(key)
             .map(|(_, value)| value)
             .ok_or_else(|| AppError::KeyNotFound(key.to_string()))
+    }
+
+    /// Append to list
+    pub fn append_to_list(&self, key: &str, v: Vec<u8>) -> Result<(), AppError> {
+        self.store
+            .entry(key.to_string())
+            .and_modify(|existing| existing.extend(v.clone()))
+            .or_insert(v);
+        Ok(())
     }
 
     /// List all keys

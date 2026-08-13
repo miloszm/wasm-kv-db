@@ -56,6 +56,10 @@ impl WasmGuest {
             .func_wrap("env", "host_caller", WasmGuest::host_caller)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_caller: {}", e)))?;
 
+        linker
+            .func_wrap("env", "host_append_to_list", WasmGuest::host_append_to_list)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_put: {}", e)))?;
+
         let instance = linker.instantiate(&mut store, &module)?;
 
         let memory = instance
@@ -304,13 +308,16 @@ impl WasmGuest {
         match storage.get(&key) {
             Ok(value_bytes) => {
                 if value_bytes.len() != 8 {
-                    eprintln!("host_get_int: value for key '{}' is not an i64 (len={})",
-                              key, value_bytes.len());
+                    eprintln!(
+                        "host_get_int: value for key '{}' is not an i64 (len={})",
+                        key,
+                        value_bytes.len()
+                    );
                     return Ok(-2); // InvalidInput
                 }
 
                 let value = i64::from_le_bytes(
-                    value_bytes.try_into().unwrap() // Safe because we checked len == 8
+                    value_bytes.try_into().unwrap(), // Safe because we checked len == 8
                 );
                 Ok(value)
             }
@@ -321,6 +328,52 @@ impl WasmGuest {
             Err(e) => {
                 eprintln!("host_get_int: storage error for key '{}': {}", key, e);
                 Ok(e.to_error_code() as i64)
+            }
+        }
+    }
+
+    /// adds entry to an existing list
+    /// returns 0 on success
+    fn host_append_to_list(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        entries_key_ptr: u32,
+        entries_key_len: u32,
+        entry_ptr: u32,
+        entry_len: u32,
+    ) -> Result<i32, wasmtime::Error> {
+        // Get memory from the instance
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => {
+                eprintln!("host_put: memory export not found");
+                return Ok(-99);
+            }
+        };
+
+        let mut key_bytes = vec![0u8; entries_key_len as usize];
+        if let Err(e) = memory.read(&mut caller, entries_key_ptr as usize, &mut key_bytes) {
+            eprintln!("host_append_to_list: failed to read key: {}", e);
+            return Ok(-2);
+        }
+
+        let key = match String::from_utf8(key_bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("host_append_to_list: invalid UTF-8 key: {}", e);
+                return Ok(-2);
+            }
+        };
+
+        // entry
+        let mut entry_bytes = vec![0u8; entry_len as usize];
+        memory.read(&mut caller, entry_ptr as usize, &mut entry_bytes)?;
+
+        let storage = &caller.data().storage;
+        match storage.append_to_list(&key, entry_bytes) {
+            Ok(_) => Ok(0),
+            Err(_) => {
+                eprintln!("host_put: storage insertion failed");
+                Ok(-99)
             }
         }
     }

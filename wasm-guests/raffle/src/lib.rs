@@ -18,6 +18,7 @@ unsafe extern "C" {
     fn host_put_int(key_ptr: *const u8, key_len: usize, value: i64) -> i32;
     fn host_get(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
     fn host_get_int(key_ptr: *const u8, key_len: usize) -> i64;
+    fn host_append_to_list(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> ();
     fn host_caller(caller_ptr: *const u8, caller_len: usize) -> i32;
 }
 
@@ -234,8 +235,19 @@ fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
     }
 
     // Append user to entries list
+    let entries_key = format!("raffle:{}:entries", args.raffle_id);
+    for _ in 0..args.quantity {
+        let user_bytes = args.user_id.as_bytes();
+        unsafe {
+            host_append_to_list(
+                entries_key.as_ptr(),
+                entries_key.len(),
+                user_bytes.as_ptr(),
+                user_bytes.len(),
+            );
+        }
+    }
 
-    let new_tickets_left = 1;
     Ok(BuyTicketResult {
         success: true,
         message: format!(

@@ -39,6 +39,15 @@ impl Storage {
             .ok_or_else(|| AppError::KeyNotFound(key.to_string()))
     }
 
+    /// Append to list
+    pub fn append_to_list(&self, key: &str, v: Vec<u8>) -> Result<(), AppError> {
+        self.store
+            .entry(key.to_string())
+            .and_modify(|existing| existing.extend(v.clone()))
+            .or_insert(v);
+        Ok(())
+    }
+
     /// List all keys
     pub fn list_keys(&self) -> Vec<String> {
         self.store.iter().map(|entry| entry.key().clone()).collect()

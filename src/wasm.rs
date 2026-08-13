@@ -110,7 +110,10 @@ impl WasmGuest {
         // Get memory from the instance
         let memory = match caller.get_export("memory") {
             Some(wasmtime::Extern::Memory(mem)) => mem,
-            _ => return Ok(1), // Error: no memory export
+            _ => {
+                eprintln!("host_put: memory export not found");
+                return Ok(-99);
+            }
         };
 
         // key
@@ -126,7 +129,10 @@ impl WasmGuest {
         let storage = &caller.data().storage;
         match storage.put(&key, value_bytes) {
             Ok(_) => Ok(0),
-            Err(_) => Ok(1),
+            Err(_) => {
+                eprintln!("host_put: storage insertion failed");
+                Ok(-99)
+            },
         }
     }
 
@@ -141,7 +147,10 @@ impl WasmGuest {
     ) -> Result<i32, wasmtime::Error> {
         let memory = match caller.get_export("memory") {
             Some(wasmtime::Extern::Memory(mem)) => mem,
-            _ => return Ok(0),
+            _ => {
+                eprintln!("host_get: memory export not found");
+                return Ok(-99);
+            }
         };
 
         // key
@@ -154,7 +163,10 @@ impl WasmGuest {
         let storage = &caller.data().storage;
         let value = match storage.get(&key) {
             Ok(v) => v,
-            Err(_) => return Ok(0),
+            Err(_) => {
+                eprintln!("host_get: not found");
+                return Ok(-1);
+            },
         };
 
         let write_len = value.len().min(value_len as usize);

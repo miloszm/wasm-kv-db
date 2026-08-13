@@ -64,6 +64,10 @@ impl WasmGuest {
             .func_wrap("env", "host_append_to_list", WasmGuest::host_append_to_list)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_append_to_list: {}", e)))?;
 
+        linker
+            .func_wrap("env", "host_rand", WasmGuest::host_rand)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_rand: {}", e)))?;
+
         let instance = linker.instantiate(&mut store, &module)?;
 
         let memory = instance
@@ -413,5 +417,18 @@ impl WasmGuest {
                 Ok(-99)
             }
         }
+    }
+
+    /// returns random number in range 0..max
+    fn host_rand(
+        _caller: wasmtime::Caller<'_, WasmState>,
+        max: u32,
+    ) -> Result<u32, wasmtime::Error> {
+        if max == 0 {
+            eprintln!("host_rand: max must be > 0");
+            return Ok(0);
+        }
+        let random = rand::random_range(0..max);
+        Ok(random)
     }
 }

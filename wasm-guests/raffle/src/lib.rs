@@ -26,6 +26,7 @@ unsafe extern "C" {
         value_len: usize,
     ) -> ();
     fn host_caller(caller_ptr: *const u8, caller_len: usize) -> i32;
+    fn host_rand(max: u32) -> u32;
 }
 
 #[repr(i32)]
@@ -309,10 +310,37 @@ fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
         return Err(ReducerError::InvalidEntries);
     }
 
-    let winner = "";
+    let winner_index = unsafe { host_rand((entries_len / ENTRY_SIZE) as u32) } as usize;
+    let (from, to) = (winner_index * ENTRY_SIZE, (winner_index + 1) * ENTRY_SIZE);
+    let winner = String::from_utf8_lossy(&entries_buf[from..to]).to_string();
+
+    // Store the winner
+    let winner_key = format!("raffle:{}:winner", args.raffle_id);
+    let winner_bytes = winner.as_bytes();
+    unsafe {
+        host_put(
+            winner_key.as_ptr(),
+            winner_key.len(),
+            winner_bytes.as_ptr(),
+            winner_bytes.len(),
+        );
+    }
+
+    // Close the raffle
+    let closed_key = format!("raffle:{}:closed", args.raffle_id);
+    let closed_value = "true".as_bytes();
+    unsafe {
+        host_put(
+            closed_key.as_ptr(),
+            closed_key.len(),
+            closed_value.as_ptr(),
+            closed_value.len(),
+        );
+    }
+
     Ok(DrawWinnerResult {
         success: true,
-        winner: Some(winner.into()),
+        winner: Some(winner.clone()),
         message: format!("Winner drawn: {}", winner),
     })
 }

@@ -65,6 +65,20 @@ pub struct CreateRaffleResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuyTicketArgs {
+    pub raffle_id: String,
+    pub user_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuyTicketResult {
+    pub success: bool,
+    pub message: String,
+    pub tickets_left: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReducerError {
     UnknownReducer,
     SerializationError,
@@ -117,7 +131,7 @@ fn execute_create_raffle(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
     to_msgpack(&result)
 }
 
-fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerError> {
+fn get_caller() -> Result<String, ReducerError> {
     const CALLER_LEN: usize = 256;
     let mut caller_buf = vec![0u8; CALLER_LEN];
 
@@ -135,6 +149,12 @@ fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerEr
         Ok(s) => s,
         Err(_) => return Err(ReducerError::Unauthorized),
     };
+
+    Ok(caller)
+}
+
+fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerError> {
+    let caller = get_caller()?;
     if caller != "admin" {
         return Err(ReducerError::Unauthorized);
     }
@@ -172,5 +192,33 @@ fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerEr
             "Raffle {} created with {} tickets",
             args.raffle_id, args.total_tickets
         ),
+    })
+}
+
+fn execute_buy_ticket(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
+    // Deserialize arguments
+    let args: BuyTicketArgs = from_msgpack(args_bytes)?;
+
+    // Call the actual business logic
+    let result = buy_ticket(args)?;
+
+    // Serialize result
+    to_msgpack(&result)
+}
+
+fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
+    let caller = get_caller()?;
+    if caller != args.user_id {
+        return Err(ReducerError::Unauthorized);
+    }
+
+    let new_tickets_left = 1;
+    Ok(BuyTicketResult {
+        success: true,
+        message: format!(
+            "Purchased {} ticket(s)! {} remaining",
+            args.quantity, new_tickets_left
+        ),
+        tickets_left: new_tickets_left as u32,
     })
 }

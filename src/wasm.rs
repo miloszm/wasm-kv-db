@@ -4,6 +4,13 @@ use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
 pub struct WasmState {
     pub storage: Storage,
+    pub user_id: String,
+}
+
+impl WasmState {
+    pub fn new(storage: Storage, user_id: String) -> Self {
+        Self { storage, user_id }
+    }
 }
 
 pub struct WasmGuest {
@@ -14,11 +21,18 @@ pub struct WasmGuest {
 }
 
 impl WasmGuest {
-    pub fn new(wasm_bytes: &[u8], storage: Storage) -> Result<Self, AppError> {
+    pub fn new(
+        wasm_bytes: &[u8],
+        storage: Storage,
+        user_id: impl AsRef<str>,
+    ) -> Result<Self, AppError> {
         let engine = Engine::default();
         let module = Module::new(&engine, wasm_bytes)?;
 
-        let mut store = Store::new(&engine, WasmState { storage });
+        let mut store = Store::new(
+            &engine,
+            WasmState::new(storage, user_id.as_ref().to_string()),
+        );
 
         let mut linker = Linker::new(&engine);
 
@@ -29,6 +43,10 @@ impl WasmGuest {
         linker
             .func_wrap("env", "host_get", WasmGuest::host_get)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_get: {}", e)))?;
+
+        linker
+            .func_wrap("env", "host_caller", WasmGuest::host_caller)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_caller: {}", e)))?;
 
         let instance = linker.instantiate(&mut store, &module)?;
 
@@ -132,7 +150,7 @@ impl WasmGuest {
             Err(_) => {
                 eprintln!("host_put: storage insertion failed");
                 Ok(-99)
-            },
+            }
         }
     }
 
@@ -166,12 +184,34 @@ impl WasmGuest {
             Err(_) => {
                 eprintln!("host_get: not found");
                 return Ok(-1);
-            },
+            }
         };
 
         let write_len = value.len().min(value_len as usize);
         memory.write(&mut caller, value_ptr as usize, &value[..write_len])?;
 
         Ok(value.len() as i32)
+    }
+
+    /// returns user id that is calling the guest
+    fn host_caller(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> Result<i32, wasmtime::Error> {
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => {
+                eprintln!("host_get: memory export not found");
+                return Ok(-99);
+            }
+        };
+
+        let user_id_bytes = caller.data().user_id.as_bytes().to_vec();
+        if user_id_bytes.len() > value_len as usize {
+            return Ok(-3);
+        }
+        memory.write(&mut caller, value_ptr as usize, &user_id_bytes)?;
+        Ok(user_id_bytes.len() as i32)
     }
 }

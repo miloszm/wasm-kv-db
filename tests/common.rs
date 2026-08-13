@@ -10,5 +10,5 @@ pub fn load_guest(storage: Storage, name: &str) -> WasmGuest {
     };
     let wasm_bytes = std::fs::read(wasm_path).expect("Failed to read Wasm file");
 
-    WasmGuest::new(&wasm_bytes, storage).expect("Failed to instantiate Wasm guest")
+    WasmGuest::new(&wasm_bytes, storage, "admin").expect("Failed to instantiate Wasm guest")
 }

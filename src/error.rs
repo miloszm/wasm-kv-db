@@ -60,7 +60,7 @@ pub fn error_code_to_string(code: i32) -> &'static str {
     match code {
         -1 => "Key not found",
         -2 => "Invalid input",
-        -3 => "Buffer too small",
+        -3 => "Buffer too short",
         -4 => "Out of memory",
         -5 => "Permission denied",
         -99 => "Internal error",

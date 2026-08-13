@@ -1,7 +1,7 @@
 use dlmalloc::GlobalDlmalloc;
-use serde::{Deserialize, Serialize};
-use rmp_serde::{Serializer, Deserializer};
+use rmp_serde::{Deserializer, Serializer};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
 #[global_allocator]
@@ -15,7 +15,10 @@ static mut ARG_BUF: [u8; ARG_BUF_SIZE] = [0; ARG_BUF_SIZE];
 #[allow(unused)]
 unsafe extern "C" {
     fn host_put(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
+    fn host_put_int(key_ptr: *const u8, key_len: usize, value: i64) -> i32;
     fn host_get(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
+    fn host_get_int(key_ptr: *const u8, key_len: usize) -> i64;
+    fn host_caller(caller_ptr: *const u8, caller_len: usize) -> i32;
 }
 
 #[repr(i32)]
@@ -56,6 +59,12 @@ pub struct CreateRaffleArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateRaffleResult {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReducerError {
     UnknownReducer,
     SerializationError,
@@ -83,7 +92,7 @@ pub fn to_msgpack<T: Serialize>(value: &T) -> Result<Vec<u8>, ReducerError> {
 
 pub fn from_msgpack<T: DeserializeOwned>(data: &[u8]) -> Result<T, ReducerError> {
     let mut deserializer = Deserializer::new(Cursor::new(data));
-    T::deserialize(&mut deserializer).map_err(|_|ReducerError::SerializationError)
+    T::deserialize(&mut deserializer).map_err(|_| ReducerError::SerializationError)
 }
 
 #[unsafe(no_mangle)]
@@ -100,4 +109,19 @@ pub extern "C" fn execute(name_len: usize, _args_len: usize) -> i32 {
     }
 
     name_len as i32
+}
+
+fn execute_create_raffle(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
+    let args: CreateRaffleArgs = from_msgpack(args_bytes)?;
+    let result = create_raffle(args)?;
+    to_msgpack(&result)
+}
+
+fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerError> {
+    // let caller = host_caller()
+
+    Ok(CreateRaffleResult {
+        success: true,
+        message: "ok".to_string(),
+    })
 }

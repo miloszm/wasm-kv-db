@@ -41,8 +41,16 @@ impl WasmGuest {
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_put: {}", e)))?;
 
         linker
+            .func_wrap("env", "host_put_int", WasmGuest::host_put_int)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_put_int: {}", e)))?;
+
+        linker
             .func_wrap("env", "host_get", WasmGuest::host_get)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_get: {}", e)))?;
+
+        linker
+            .func_wrap("env", "host_get_int", WasmGuest::host_get_int)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_get_int: {}", e)))?;
 
         linker
             .func_wrap("env", "host_caller", WasmGuest::host_caller)
@@ -134,11 +142,19 @@ impl WasmGuest {
             }
         };
 
-        // key
         let mut key_bytes = vec![0u8; key_len as usize];
-        memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
-        let key =
-            String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
+        if let Err(e) = memory.read(&mut caller, key_ptr as usize, &mut key_bytes) {
+            eprintln!("host_put: failed to read key: {}", e);
+            return Ok(-2);
+        }
+
+        let key = match String::from_utf8(key_bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("host_put: invalid UTF-8 key: {}", e);
+                return Ok(-2);
+            }
+        };
 
         // value
         let mut value_bytes = vec![0u8; value_len as usize];
@@ -155,7 +171,7 @@ impl WasmGuest {
     }
 
     /// gets value from host store
-    /// returns 0 if not found, otherwise length of the found value
+    /// returns length of data passed back or negative error code
     fn host_get(
         mut caller: wasmtime::Caller<'_, WasmState>,
         key_ptr: u32,
@@ -213,5 +229,99 @@ impl WasmGuest {
         }
         memory.write(&mut caller, value_ptr as usize, &user_id_bytes)?;
         Ok(user_id_bytes.len() as i32)
+    }
+
+    fn host_put_int(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+        value: i64,
+    ) -> Result<i32, wasmtime::Error> {
+        // Get memory from the instance
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => {
+                eprintln!("host_put: memory export not found");
+                return Ok(-99);
+            }
+        };
+
+        let mut key_bytes = vec![0u8; key_len as usize];
+        if let Err(e) = memory.read(&mut caller, key_ptr as usize, &mut key_bytes) {
+            eprintln!("host_put_int: failed to read key: {}", e);
+            return Ok(-2); // InvalidInput
+        }
+
+        let key = match String::from_utf8(key_bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("host_put_int: invalid UTF-8 key: {}", e);
+                return Ok(-2);
+            }
+        };
+
+        let value_bytes = value.to_le_bytes().to_vec();
+
+        let storage = &caller.data().storage;
+        match storage.put(&key, value_bytes) {
+            Ok(_) => Ok(0),
+            Err(e) => {
+                eprintln!("host_put_int: storage insertion failed");
+                Ok(e.to_error_code())
+            }
+        }
+    }
+
+    fn host_get_int(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+    ) -> Result<i64, wasmtime::Error> {
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => {
+                eprintln!("host_get_int: memory export not found");
+                return Ok(-99); // Internal error
+            }
+        };
+
+        let mut key_bytes = vec![0u8; key_len as usize];
+        if let Err(e) = memory.read(&mut caller, key_ptr as usize, &mut key_bytes) {
+            eprintln!("host_get_int: failed to read key: {}", e);
+            return Ok(-2); // InvalidInput
+        }
+
+        let key = match String::from_utf8(key_bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("host_get_int: invalid UTF-8 key: {}", e);
+                return Ok(-2); // InvalidInput
+            }
+        };
+
+        // Get value from storage
+        let storage = &caller.data().storage;
+        match storage.get(&key) {
+            Ok(value_bytes) => {
+                if value_bytes.len() != 8 {
+                    eprintln!("host_get_int: value for key '{}' is not an i64 (len={})",
+                              key, value_bytes.len());
+                    return Ok(-2); // InvalidInput
+                }
+
+                let value = i64::from_le_bytes(
+                    value_bytes.try_into().unwrap() // Safe because we checked len == 8
+                );
+                Ok(value)
+            }
+            Err(AppError::KeyNotFound(_)) => {
+                eprintln!("host_get_int: key '{}' not found", key);
+                Ok(-1) // KeyNotFound
+            }
+            Err(e) => {
+                eprintln!("host_get_int: storage error for key '{}': {}", key, e);
+                Ok(e.to_error_code() as i64)
+            }
+        }
     }
 }

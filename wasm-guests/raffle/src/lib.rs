@@ -118,10 +118,59 @@ fn execute_create_raffle(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
 }
 
 fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerError> {
-    // let caller = host_caller()
+    const CALLER_LEN: usize = 256;
+    let mut caller_buf = vec![0u8; CALLER_LEN];
+
+    let caller_len = unsafe { host_caller(caller_buf.as_mut_ptr(), CALLER_LEN) };
+    if caller_len < 0 {
+        return Err(ReducerError::Unauthorized); // host_caller failed
+    }
+    let caller_len = caller_len as usize;
+
+    if caller_len >= CALLER_LEN {
+        return Err(ReducerError::Unauthorized);
+    }
+
+    let caller = match String::from_utf8(caller_buf[..caller_len].to_vec()) {
+        Ok(s) => s,
+        Err(_) => return Err(ReducerError::Unauthorized),
+    };
+    if caller != "admin" {
+        return Err(ReducerError::Unauthorized);
+    }
+
+    let tickets_key = format!("raffle:{}:tickets_left", args.raffle_id);
+    let tickets_bytes = args.total_tickets.to_le_bytes().to_vec();
+    unsafe {
+        host_put(
+            tickets_key.as_ptr(),
+            tickets_key.len(),
+            tickets_bytes.as_ptr(),
+            tickets_bytes.len(),
+        );
+    }
+
+    let end_time_key = format!("raffle:{}:end_time", args.raffle_id);
+    let end_time_bytes = args.end_time.to_le_bytes().to_vec();
+    unsafe {
+        host_put(
+            end_time_key.as_ptr(),
+            end_time_key.len(),
+            end_time_bytes.as_ptr(),
+            end_time_bytes.len(),
+        );
+    }
+
+    let entries_key = format!("raffle:{}:entries", args.raffle_id);
+    unsafe {
+        host_put(entries_key.as_ptr(), entries_key.len(), std::ptr::null(), 0);
+    }
 
     Ok(CreateRaffleResult {
         success: true,
-        message: "ok".to_string(),
+        message: format!(
+            "Raffle {} created with {} tickets",
+            args.raffle_id, args.total_tickets
+        ),
     })
 }

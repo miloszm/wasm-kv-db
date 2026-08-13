@@ -28,6 +28,9 @@ pub enum AppError {
     #[error("Permission denied")]
     PermissionDenied,
 
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -50,6 +53,7 @@ impl AppError {
             AppError::Io(_)
             | AppError::Wasm(_)
             | AppError::WasmGuest(_)
+            | AppError::Serialization(_)
             | AppError::Internal(_) => -99,
         }
     }

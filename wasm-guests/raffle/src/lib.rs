@@ -12,6 +12,8 @@ const ARG_BUF_SIZE: usize = 65536;
 #[unsafe(no_mangle)]
 static mut ARG_BUF: [u8; ARG_BUF_SIZE] = [0; ARG_BUF_SIZE];
 
+const USER_ID_SIZE: usize = 8;
+
 #[allow(unused)]
 unsafe extern "C" {
     fn host_put(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
@@ -24,8 +26,9 @@ unsafe extern "C" {
         key_len: usize,
         value_ptr: *const u8,
         value_len: usize,
-    ) -> ();
+    ) -> i32;
     fn host_caller(caller_ptr: *const u8, caller_len: usize) -> i32;
+    fn host_rand(max: u32) -> u32;
 }
 
 #[repr(i32)]
@@ -107,6 +110,7 @@ pub enum ReducerError {
     NoEntries,
     InvalidEntries,
     Unauthorized,
+    InvalidUserId,
     InternalError,
 }
 
@@ -130,19 +134,31 @@ pub fn from_msgpack<T: DeserializeOwned>(data: &[u8]) -> Result<T, ReducerError>
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn execute(name_len: usize, _args_len: usize) -> i32 {
+pub extern "C" fn execute(name_len: usize, args_len: usize) -> i32 {
     let name_ptr = &raw mut ARG_BUF as *mut u8;
     let buf_ptr = unsafe { name_ptr.add(name_len) };
 
     let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len) }.to_vec();
     let name = String::from_utf8(name_bytes).unwrap_or("".to_string());
 
-    let output_bytes = name.as_bytes();
-    unsafe {
-        std::ptr::copy(output_bytes.as_ptr(), buf_ptr, name_len);
-    }
+    let args_bytes = unsafe { std::slice::from_raw_parts(buf_ptr, args_len) };
+    let result = match name.as_str() {
+        "create_raffle" => execute_create_raffle(args_bytes),
+        "buy_ticket" => execute_buy_ticket(args_bytes),
+        "draw_winner" => execute_draw_winner(args_bytes),
+        _ => return -2, // invalid input
+    };
 
-    name_len as i32
+    match result {
+        Ok(v) => unsafe {
+            std::ptr::copy(v.as_ptr(), name_ptr, v.len());
+            v.len() as i32
+        },
+        Err(e) => {
+            eprintln!("Reducer error {e} when executing {name}");
+            -99
+        }
+    }
 }
 
 fn execute_create_raffle(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
@@ -180,24 +196,20 @@ fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerEr
     }
 
     let tickets_key = format!("raffle:{}:tickets_left", args.raffle_id);
-    let tickets_bytes = args.total_tickets.to_le_bytes().to_vec();
     unsafe {
-        host_put(
+        host_put_int(
             tickets_key.as_ptr(),
             tickets_key.len(),
-            tickets_bytes.as_ptr(),
-            tickets_bytes.len(),
+            args.total_tickets as i64
         );
     }
 
     let end_time_key = format!("raffle:{}:end_time", args.raffle_id);
-    let end_time_bytes = args.end_time.to_le_bytes().to_vec();
     unsafe {
-        host_put(
+        host_put_int(
             end_time_key.as_ptr(),
             end_time_key.len(),
-            end_time_bytes.as_ptr(),
-            end_time_bytes.len(),
+            args.end_time as i64
         );
     }
 
@@ -227,12 +239,23 @@ fn execute_buy_ticket(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
 }
 
 fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
+    if args.user_id.len() != USER_ID_SIZE {
+        return Err(ReducerError::InvalidUserId)
+    }
     let caller = get_caller()?;
     if caller != args.user_id {
         return Err(ReducerError::Unauthorized);
     }
 
     // todo: check raffle time
+
+    // check if raffle is not closed
+    let closed_key = format!("raffle:{}:closed", args.raffle_id);
+    let mut closed_bytes = vec![0u8; 4];
+    let _ = unsafe { host_get(closed_key.as_ptr(), closed_key.len(), closed_bytes.as_mut_ptr(), closed_bytes.len()) };
+    if closed_bytes == "true".as_bytes() {
+        return Err(ReducerError::RaffleAlreadyEnded);
+    }
 
     let tickets_key = format!("raffle:{}:tickets_left", args.raffle_id);
     let tickets_left = unsafe { host_get_int(tickets_key.as_ptr(), tickets_key.len()) };
@@ -284,7 +307,10 @@ fn execute_draw_winner(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
 }
 
 fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
-    const ENTRY_SIZE: usize = 8;
+    let caller = get_caller()?;
+    if caller != "admin" {
+        return Err(ReducerError::Unauthorized);
+    }
     let entries_key = format!("raffle:{}:entries", args.raffle_id);
 
     let entries_len = unsafe { host_get_len(entries_key.as_ptr(), entries_key.len()) };
@@ -292,7 +318,7 @@ fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
         return Err(ReducerError::NoEntries);
     }
     let entries_len = entries_len as usize;
-    if entries_len % ENTRY_SIZE != 0 {
+    if entries_len % USER_ID_SIZE != 0 {
         return Err(ReducerError::InvalidEntries);
     }
 
@@ -309,10 +335,37 @@ fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
         return Err(ReducerError::InvalidEntries);
     }
 
-    let winner = "";
+    let winner_index = unsafe { host_rand((entries_len / USER_ID_SIZE) as u32) } as usize;
+    let (from, to) = (winner_index * USER_ID_SIZE, (winner_index + 1) * USER_ID_SIZE);
+    let winner = String::from_utf8_lossy(&entries_buf[from..to]).to_string();
+
+    // Store the winner
+    let winner_key = format!("raffle:{}:winner", args.raffle_id);
+    let winner_bytes = winner.as_bytes();
+    unsafe {
+        host_put(
+            winner_key.as_ptr(),
+            winner_key.len(),
+            winner_bytes.as_ptr(),
+            winner_bytes.len(),
+        );
+    }
+
+    // Close the raffle
+    let closed_key = format!("raffle:{}:closed", args.raffle_id);
+    let closed_value = "true".as_bytes();
+    unsafe {
+        host_put(
+            closed_key.as_ptr(),
+            closed_key.len(),
+            closed_value.as_ptr(),
+            closed_value.len(),
+        );
+    }
+
     Ok(DrawWinnerResult {
         success: true,
-        winner: Some(winner.into()),
+        winner: Some(winner.clone()),
         message: format!("Winner drawn: {}", winner),
     })
 }

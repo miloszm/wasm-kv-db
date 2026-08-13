@@ -212,6 +212,29 @@ fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
         return Err(ReducerError::Unauthorized);
     }
 
+    // todo: check raffle time
+
+    let tickets_key = format!("raffle:{}:tickets_left", args.raffle_id);
+    let tickets_left = unsafe { host_get_int(tickets_key.as_ptr(), tickets_key.len()) };
+
+    if tickets_left <= 0 {
+        return Err(ReducerError::InsufficientTickets);
+    }
+
+    if args.quantity > tickets_left as u32 {
+        return Err(ReducerError::InsufficientTickets);
+    }
+
+    let new_tickets_left = tickets_left - args.quantity as i64;
+
+    // Update tickets_left
+    let key_bytes = tickets_key.as_bytes();
+    unsafe {
+        host_put_int(key_bytes.as_ptr(), key_bytes.len(), new_tickets_left);
+    }
+
+    // Append user to entries list
+
     let new_tickets_left = 1;
     Ok(BuyTicketResult {
         success: true,

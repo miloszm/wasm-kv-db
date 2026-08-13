@@ -17,8 +17,14 @@ unsafe extern "C" {
     fn host_put(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
     fn host_put_int(key_ptr: *const u8, key_len: usize, value: i64) -> i32;
     fn host_get(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
+    fn host_get_len(key_ptr: *const u8, key_len: usize) -> i32;
     fn host_get_int(key_ptr: *const u8, key_len: usize) -> i64;
-    fn host_append_to_list(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> ();
+    fn host_append_to_list(
+        key_ptr: *const u8,
+        key_len: usize,
+        value_ptr: *const u8,
+        value_len: usize,
+    ) -> ();
     fn host_caller(caller_ptr: *const u8, caller_len: usize) -> i32;
 }
 
@@ -80,6 +86,18 @@ pub struct BuyTicketResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrawWinnerArgs {
+    pub raffle_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrawWinnerResult {
+    pub success: bool,
+    pub winner: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReducerError {
     UnknownReducer,
     SerializationError,
@@ -87,6 +105,7 @@ pub enum ReducerError {
     RaffleNotFound,
     RaffleAlreadyEnded,
     NoEntries,
+    InvalidEntries,
     Unauthorized,
     InternalError,
 }
@@ -255,5 +274,45 @@ fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
             args.quantity, new_tickets_left
         ),
         tickets_left: new_tickets_left as u32,
+    })
+}
+
+fn execute_draw_winner(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
+    let args: DrawWinnerArgs = from_msgpack(args_bytes)?;
+    let result = draw_winner(args)?;
+    to_msgpack(&result)
+}
+
+fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
+    const ENTRY_SIZE: usize = 8;
+    let entries_key = format!("raffle:{}:entries", args.raffle_id);
+
+    let entries_len = unsafe { host_get_len(entries_key.as_ptr(), entries_key.len()) };
+    if entries_len <= 0 {
+        return Err(ReducerError::NoEntries);
+    }
+    let entries_len = entries_len as usize;
+    if entries_len % ENTRY_SIZE != 0 {
+        return Err(ReducerError::InvalidEntries);
+    }
+
+    let mut entries_buf = vec![0u8; entries_len as usize];
+    let actual_entries_len = unsafe {
+        host_get(
+            entries_key.as_ptr(),
+            entries_key.len(),
+            entries_buf.as_mut_ptr(),
+            entries_len,
+        )
+    };
+    if actual_entries_len as usize != entries_len {
+        return Err(ReducerError::InvalidEntries);
+    }
+
+    let winner = "";
+    Ok(DrawWinnerResult {
+        success: true,
+        winner: Some(winner.into()),
+        message: format!("Winner drawn: {}", winner),
     })
 }

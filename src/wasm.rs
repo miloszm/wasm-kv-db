@@ -49,6 +49,10 @@ impl WasmGuest {
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_get: {}", e)))?;
 
         linker
+            .func_wrap("env", "host_get_len", WasmGuest::host_get_len)
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_get_len: {}", e)))?;
+
+        linker
             .func_wrap("env", "host_get_int", WasmGuest::host_get_int)
             .map_err(|e| AppError::WasmGuest(format!("failed to link host_get_int: {}", e)))?;
 
@@ -58,7 +62,7 @@ impl WasmGuest {
 
         linker
             .func_wrap("env", "host_append_to_list", WasmGuest::host_append_to_list)
-            .map_err(|e| AppError::WasmGuest(format!("failed to link host_put: {}", e)))?;
+            .map_err(|e| AppError::WasmGuest(format!("failed to link host_append_to_list: {}", e)))?;
 
         let instance = linker.instantiate(&mut store, &module)?;
 
@@ -211,6 +215,39 @@ impl WasmGuest {
         memory.write(&mut caller, value_ptr as usize, &value[..write_len])?;
 
         Ok(value.len() as i32)
+    }
+
+    /// gets length of the value from host store
+    fn host_get_len(
+        mut caller: wasmtime::Caller<'_, WasmState>,
+        key_ptr: u32,
+        key_len: u32,
+    ) -> Result<i32, wasmtime::Error> {
+        let memory = match caller.get_export("memory") {
+            Some(wasmtime::Extern::Memory(mem)) => mem,
+            _ => {
+                eprintln!("host_get_len: memory export not found");
+                return Ok(-99);
+            }
+        };
+
+        // key
+        let mut key_bytes = vec![0u8; key_len as usize];
+        memory.read(&mut caller, key_ptr as usize, &mut key_bytes)?;
+        let key =
+            String::from_utf8(key_bytes).map_err(|_| wasmtime::Error::msg("invalid UTF-8 key"))?;
+
+        // get value from storage
+        let storage = &caller.data().storage;
+        let len = match storage.get_len(&key) {
+            Ok(len) => len,
+            Err(_) => {
+                eprintln!("host_get_len: not found");
+                return Ok(-1);
+            }
+        };
+
+        Ok(len as i32)
     }
 
     /// returns user id that is calling the guest

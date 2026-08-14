@@ -1,7 +1,7 @@
 use wasm_kv_db::{Storage, WasmGuest};
 
-pub fn load_guest(storage: Storage, guest_name: &str, user_id: &str) -> WasmGuest {
-    let wasm_path = match guest_name {
+pub fn load_guest(storage: Storage, tenant_name: &str, user_id: &str) -> WasmGuest {
+    let wasm_path = match tenant_name {
         "simple" => {
             "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm"
         }

@@ -59,22 +59,24 @@ pub fn from_msgpack<T: DeserializeOwned>(data: &[u8]) -> Result<T, AppError> {
     T::deserialize(&mut deserializer).map_err(|e| AppError::Serialization(e.to_string()))
 }
 
+const TOTAL_TICKETS: u32 = 5;
+const RAFFLE_ID: &str = "raffle1";
+const USER_ID_SIZE: usize = 8;
+const ADMIN_USER: &str = "admin";
+const TENANT: &str = "raffle";
+
 #[test]
 pub fn raffle_guest_incorrect_target() -> Result<(), AppError> {
     let storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle", "admin");
+    let mut guest = load_guest(storage.clone(), TENANT, ADMIN_USER);
 
-    let name = b"raffle".to_vec();
+    let name = b"incorrect".to_vec();
     let data = b"".to_vec();
 
     let result = guest.execute(&name, &data);
     assert!(result.is_err());
     Ok(())
 }
-
-const TOTAL_TICKETS: u32 = 5;
-const RAFFLE_ID: &str = "raffle1";
-const USER_ID_SIZE: usize = 8;
 
 fn create_raffle(guest: &mut WasmGuest) -> Result<CreateRaffleResult, AppError> {
     let create_raffle = b"create_raffle".to_vec();
@@ -92,8 +94,8 @@ fn create_raffle(guest: &mut WasmGuest) -> Result<CreateRaffleResult, AppError> 
 #[test]
 pub fn raffle_guest_create_raffle() -> Result<(), AppError> {
     let storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle", "admin");
-    let create_raffle_result: CreateRaffleResult = create_raffle(&mut guest)?;
+    let mut admin_guest = load_guest(storage.clone(), TENANT, ADMIN_USER);
+    let create_raffle_result: CreateRaffleResult = create_raffle(&mut admin_guest)?;
 
     assert_eq!(create_raffle_result.success, true);
     assert_eq!(
@@ -109,7 +111,7 @@ pub fn raffle_guest_create_raffle() -> Result<(), AppError> {
 }
 
 fn buy_ticket(storage: &mut Storage, user_id: &str) -> Result<BuyTicketResult, AppError> {
-    let mut guest = load_guest(storage.clone(), "raffle", user_id);
+    let mut guest = load_guest(storage.clone(), TENANT, user_id);
     let buy_ticket_args = BuyTicketArgs {
         raffle_id: RAFFLE_ID.to_string(),
         user_id: user_id.to_string(),
@@ -125,8 +127,8 @@ fn buy_ticket(storage: &mut Storage, user_id: &str) -> Result<BuyTicketResult, A
 pub fn raffle_guest_buy_ticket() -> Result<(), AppError> {
     const USER_ID: &str = "user0001";
     let mut storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle", "admin");
-    let _ = create_raffle(&mut guest)?;
+    let mut admin_guest = load_guest(storage.clone(), TENANT, ADMIN_USER);
+    let _ = create_raffle(&mut admin_guest)?;
     let buy_ticket_result: BuyTicketResult = buy_ticket(&mut storage, USER_ID)?;
 
     assert_eq!(buy_ticket_result.tickets_left, TOTAL_TICKETS - 1);
@@ -146,23 +148,30 @@ pub fn raffle_guest_buy_ticket() -> Result<(), AppError> {
     Ok(())
 }
 
-#[test]
-pub fn raffle_guest_draw_winner() -> Result<(), AppError> {
-    let mut storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle", "admin");
-    let _ = create_raffle(&mut guest)?;
-    let users = vec!["user0001", "user0002", "user0003", "user0004"];
-    for user in users.iter() {
-        let _ = buy_ticket(&mut storage, user)?;
-    }
-
+fn draw_winner(guest: &mut WasmGuest) -> Result<DrawWinnerResult, AppError> {
     let draw_winner_args = DrawWinnerArgs {
         raffle_id: RAFFLE_ID.to_string(),
     };
     let draw_winner_bytes = to_msgpack(&draw_winner_args)?;
     let draw_winner = b"draw_winner".to_vec();
     let result_bytes = guest.execute(&draw_winner, &draw_winner_bytes)?;
-    let draw_result: DrawWinnerResult = from_msgpack(&result_bytes)?;
+    Ok(from_msgpack(&result_bytes)?)
+}
+
+#[test]
+pub fn raffle_guest_draw_winner() -> Result<(), AppError> {
+    let mut storage = Storage::new();
+    let mut admin_guest = load_guest(storage.clone(), TENANT, ADMIN_USER);
+
+    let _ = create_raffle(&mut admin_guest)?;
+
+    let users = vec!["user0001", "user0002", "user0003", "user0004"];
+    for user in users.iter() {
+        let _ = buy_ticket(&mut storage, user)?;
+    }
+
+    let draw_result: DrawWinnerResult = draw_winner(&mut admin_guest)?;
+
     assert!(draw_result.winner.is_some());
     let winner = draw_result.winner.unwrap();
     println!("the winner is: {}", winner);

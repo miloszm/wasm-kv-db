@@ -62,7 +62,7 @@ pub fn from_msgpack<T: DeserializeOwned>(data: &[u8]) -> Result<T, AppError> {
 #[test]
 pub fn raffle_guest_incorrect_target() -> Result<(), AppError> {
     let storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle");
+    let mut guest = load_guest(storage.clone(), "raffle", "admin");
 
     let name = b"raffle".to_vec();
     let data = b"".to_vec();
@@ -72,9 +72,8 @@ pub fn raffle_guest_incorrect_target() -> Result<(), AppError> {
     Ok(())
 }
 
-const TOTAL_TICKETS: u32 = 3;
+const TOTAL_TICKETS: u32 = 5;
 const RAFFLE_ID: &str = "raffle1";
-const USER_ID: &str = "admin";
 const USER_ID_SIZE: usize = 8;
 
 fn create_raffle(guest: &mut WasmGuest) -> Result<CreateRaffleResult, AppError> {
@@ -92,8 +91,8 @@ fn create_raffle(guest: &mut WasmGuest) -> Result<CreateRaffleResult, AppError> 
 
 #[test]
 pub fn raffle_guest_create_raffle() -> Result<(), AppError> {
-    let mut storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle");
+    let storage = Storage::new();
+    let mut guest = load_guest(storage.clone(), "raffle", "admin");
     let create_raffle_result: CreateRaffleResult = create_raffle(&mut guest)?;
 
     assert_eq!(create_raffle_result.success, true);
@@ -109,10 +108,11 @@ pub fn raffle_guest_create_raffle() -> Result<(), AppError> {
     Ok(())
 }
 
-fn buy_ticket(guest: &mut WasmGuest) -> Result<BuyTicketResult, AppError> {
+fn buy_ticket(storage: &mut Storage, user_id: &str) -> Result<BuyTicketResult, AppError> {
+    let mut guest = load_guest(storage.clone(), "raffle", user_id);
     let buy_ticket_args = BuyTicketArgs {
         raffle_id: RAFFLE_ID.to_string(),
-        user_id: USER_ID.to_string(),
+        user_id: user_id.to_string(),
         quantity: 1,
     };
     let buy_ticket_bytes = to_msgpack(&buy_ticket_args)?;
@@ -123,12 +123,13 @@ fn buy_ticket(guest: &mut WasmGuest) -> Result<BuyTicketResult, AppError> {
 
 #[test]
 pub fn raffle_guest_buy_ticket() -> Result<(), AppError> {
+    const USER_ID: &str = "user0001";
     let mut storage = Storage::new();
-    let mut guest = load_guest(storage.clone(), "raffle");
+    let mut guest = load_guest(storage.clone(), "raffle", "admin");
     let _ = create_raffle(&mut guest)?;
-    let buy_ticket_result: BuyTicketResult = buy_ticket(&mut guest)?;
+    let buy_ticket_result: BuyTicketResult = buy_ticket(&mut storage, USER_ID)?;
 
-    assert_eq!(buy_ticket_result.tickets_left, 2);
+    assert_eq!(buy_ticket_result.tickets_left, TOTAL_TICKETS - 1);
     assert_eq!(buy_ticket_result.success, true);
 
     assert_eq!(
@@ -142,5 +143,17 @@ pub fn raffle_guest_buy_ticket() -> Result<(), AppError> {
         USER_ID.as_bytes()
     );
 
+    Ok(())
+}
+
+#[test]
+pub fn raffle_guest_draw_winner() -> Result<(), AppError> {
+    let mut storage = Storage::new();
+    let mut guest = load_guest(storage.clone(), "raffle", "admin");
+    let _ = create_raffle(&mut guest)?;
+    let _ = buy_ticket(&mut storage, "user0001")?;
+    let _ = buy_ticket(&mut storage, "user0002")?;
+    let _ = buy_ticket(&mut storage, "user0003")?;
+    let _ = buy_ticket(&mut storage, "user0004")?;
     Ok(())
 }

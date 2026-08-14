@@ -12,6 +12,8 @@ const ARG_BUF_SIZE: usize = 65536;
 #[unsafe(no_mangle)]
 static mut ARG_BUF: [u8; ARG_BUF_SIZE] = [0; ARG_BUF_SIZE];
 
+const USER_ID_SIZE: usize = 8;
+
 #[allow(unused)]
 unsafe extern "C" {
     fn host_put(key_ptr: *const u8, key_len: usize, value_ptr: *const u8, value_len: usize) -> i32;
@@ -108,6 +110,7 @@ pub enum ReducerError {
     NoEntries,
     InvalidEntries,
     Unauthorized,
+    InvalidUserId,
     InternalError,
 }
 
@@ -236,6 +239,9 @@ fn execute_buy_ticket(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
 }
 
 fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
+    if args.user_id.len() != USER_ID_SIZE {
+        return Err(ReducerError::InvalidUserId)
+    }
     let caller = get_caller()?;
     if caller != args.user_id {
         return Err(ReducerError::Unauthorized);
@@ -293,7 +299,10 @@ fn execute_draw_winner(args_bytes: &[u8]) -> Result<Vec<u8>, ReducerError> {
 }
 
 fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
-    const ENTRY_SIZE: usize = 8;
+    let caller = get_caller()?;
+    if caller != "admin" {
+        return Err(ReducerError::Unauthorized);
+    }
     let entries_key = format!("raffle:{}:entries", args.raffle_id);
 
     let entries_len = unsafe { host_get_len(entries_key.as_ptr(), entries_key.len()) };
@@ -301,7 +310,7 @@ fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
         return Err(ReducerError::NoEntries);
     }
     let entries_len = entries_len as usize;
-    if entries_len % ENTRY_SIZE != 0 {
+    if entries_len % USER_ID_SIZE != 0 {
         return Err(ReducerError::InvalidEntries);
     }
 
@@ -318,8 +327,8 @@ fn draw_winner(args: DrawWinnerArgs) -> Result<DrawWinnerResult, ReducerError> {
         return Err(ReducerError::InvalidEntries);
     }
 
-    let winner_index = unsafe { host_rand((entries_len / ENTRY_SIZE) as u32) } as usize;
-    let (from, to) = (winner_index * ENTRY_SIZE, (winner_index + 1) * ENTRY_SIZE);
+    let winner_index = unsafe { host_rand((entries_len / USER_ID_SIZE) as u32) } as usize;
+    let (from, to) = (winner_index * USER_ID_SIZE, (winner_index + 1) * USER_ID_SIZE);
     let winner = String::from_utf8_lossy(&entries_buf[from..to]).to_string();
 
     // Store the winner

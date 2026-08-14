@@ -151,9 +151,28 @@ pub fn raffle_guest_draw_winner() -> Result<(), AppError> {
     let mut storage = Storage::new();
     let mut guest = load_guest(storage.clone(), "raffle", "admin");
     let _ = create_raffle(&mut guest)?;
-    let _ = buy_ticket(&mut storage, "user0001")?;
-    let _ = buy_ticket(&mut storage, "user0002")?;
-    let _ = buy_ticket(&mut storage, "user0003")?;
-    let _ = buy_ticket(&mut storage, "user0004")?;
+    let users = vec!["user0001", "user0002", "user0003", "user0004"];
+    for user in users.iter() {
+        let _ = buy_ticket(&mut storage, user)?;
+    }
+
+    let draw_winner_args = DrawWinnerArgs {
+        raffle_id: RAFFLE_ID.to_string(),
+    };
+    let draw_winner_bytes = to_msgpack(&draw_winner_args)?;
+    let draw_winner = b"draw_winner".to_vec();
+    let result_bytes = guest.execute(&draw_winner, &draw_winner_bytes)?;
+    let draw_result: DrawWinnerResult = from_msgpack(&result_bytes)?;
+    assert!(draw_result.winner.is_some());
+    let winner = draw_result.winner.unwrap();
+    println!("the winner is: {}", winner);
+    assert!(users.contains(&winner.as_str()));
+
+    let stored_winner = storage.get(format!("raffle:{RAFFLE_ID}:winner").as_str())?;
+    assert_eq!(stored_winner, winner.as_bytes());
+
+    let raffle_closed_marker = storage.get(format!("raffle:{RAFFLE_ID}:closed").as_str())?;
+    assert_eq!(raffle_closed_marker, "true".as_bytes());
+
     Ok(())
 }

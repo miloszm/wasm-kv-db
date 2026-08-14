@@ -193,24 +193,20 @@ fn create_raffle(args: CreateRaffleArgs) -> Result<CreateRaffleResult, ReducerEr
     }
 
     let tickets_key = format!("raffle:{}:tickets_left", args.raffle_id);
-    let tickets_bytes = args.total_tickets.to_le_bytes().to_vec();
     unsafe {
-        host_put(
+        host_put_int(
             tickets_key.as_ptr(),
             tickets_key.len(),
-            tickets_bytes.as_ptr(),
-            tickets_bytes.len(),
+            args.total_tickets as i64
         );
     }
 
     let end_time_key = format!("raffle:{}:end_time", args.raffle_id);
-    let end_time_bytes = args.end_time.to_le_bytes().to_vec();
     unsafe {
-        host_put(
+        host_put_int(
             end_time_key.as_ptr(),
             end_time_key.len(),
-            end_time_bytes.as_ptr(),
-            end_time_bytes.len(),
+            args.end_time as i64
         );
     }
 

@@ -1,5 +1,5 @@
 use crate::Storage;
-use crate::error::AppError;
+use crate::error::{AppError, error_code_to_string};
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
 pub struct WasmState {
@@ -16,7 +16,7 @@ impl WasmState {
 pub struct WasmGuest {
     store: Store<WasmState>,
     memory: Memory,
-    execute: TypedFunc<(u32, u32), u32>, // input len -> output len
+    execute: TypedFunc<(u32, u32), i32>, // input len -> output len
     arg_buf_ofs: usize,
 }
 
@@ -62,7 +62,9 @@ impl WasmGuest {
 
         linker
             .func_wrap("env", "host_append_to_list", WasmGuest::host_append_to_list)
-            .map_err(|e| AppError::WasmGuest(format!("failed to link host_append_to_list: {}", e)))?;
+            .map_err(|e| {
+                AppError::WasmGuest(format!("failed to link host_append_to_list: {}", e))
+            })?;
 
         linker
             .func_wrap("env", "host_rand", WasmGuest::host_rand)
@@ -75,7 +77,7 @@ impl WasmGuest {
             .ok_or_else(|| AppError::WasmGuest("guest must export memory".to_string()))?;
 
         let execute = instance
-            .get_typed_func::<(u32, u32), u32>(&mut store, "execute")
+            .get_typed_func::<(u32, u32), i32>(&mut store, "execute")
             .map_err(|e| AppError::WasmGuest(format!("failed to get execute: {}", e)))?;
 
         let arg_buf = instance
@@ -116,10 +118,19 @@ impl WasmGuest {
             .write(&mut self.store, argbuf_ptr, args)
             .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
 
-        let output_len = self
+        let result = self
             .execute
             .call(&mut self.store, (input_len, args_len))
             .map_err(|e| AppError::WasmGuest(format!("transform failed: {}", e)))?;
+
+        let output_len = if result >= 0 {
+            result
+        } else {
+            return Err(AppError::Internal(format!(
+                "execution failed: {}",
+                error_code_to_string(result)
+            )));
+        };
 
         if output_len as usize > 65536 {
             return Err(AppError::WasmGuest(format!(

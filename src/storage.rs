@@ -31,6 +31,18 @@ impl Storage {
             .ok_or_else(|| AppError::KeyNotFound(key.to_string()))
     }
 
+    /// Retrieve an int value by key
+    pub fn get_int(&self, key: &str) -> Result<i64, AppError> {
+        let bytes = self.get(key)?;
+        let len = bytes.len();
+        bytes.try_into().map(i64::from_le_bytes).map_err(|_| {
+            AppError::Serialization(format!(
+                "Value for key '{}' is not a valid i64 (len={})",
+                key, len
+            ))
+        })
+    }
+
     /// Retrieve length of a value by key
     pub fn get_len(&self, key: &str) -> Result<usize, AppError> {
         self.store

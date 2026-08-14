@@ -249,6 +249,14 @@ fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
 
     // todo: check raffle time
 
+    // check if raffle is not closed
+    let closed_key = format!("raffle:{}:closed", args.raffle_id);
+    let mut closed_bytes = vec![0u8; 4];
+    let _ = unsafe { host_get(closed_key.as_ptr(), closed_key.len(), closed_bytes.as_mut_ptr(), closed_bytes.len()) };
+    if closed_bytes == "true".as_bytes() {
+        return Err(ReducerError::RaffleAlreadyEnded);
+    }
+
     let tickets_key = format!("raffle:{}:tickets_left", args.raffle_id);
     let tickets_left = unsafe { host_get_int(tickets_key.as_ptr(), tickets_key.len()) };
 

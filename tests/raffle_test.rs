@@ -183,5 +183,8 @@ pub fn raffle_guest_draw_winner() -> Result<(), AppError> {
     let raffle_closed_marker = storage.get(format!("raffle:{RAFFLE_ID}:closed").as_str())?;
     assert_eq!(raffle_closed_marker, "true".as_bytes());
 
+    // try to buy a ticket for a closed raffle and make sure it fails
+    assert!(buy_ticket(&mut storage, users[0]).is_err());
+
     Ok(())
 }

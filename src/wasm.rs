@@ -96,10 +96,13 @@ impl WasmGuest {
         })
     }
 
+    /// executes Wasm method of name `name` with arguments `args`
+    /// returns bytes returned by the executed Wasm method or
+    /// error with negative error code transformed into AppError
     pub fn execute(&mut self, name: &[u8], args: &[u8]) -> Result<Vec<u8>, AppError> {
         let input_len = name.len() as u32;
         let args_len = args.len() as u32;
-        let name_ptr = self.arg_buf_ofs;
+        let buf_ptr = self.arg_buf_ofs;
         let argbuf_ptr = self.arg_buf_ofs + input_len as usize;
 
         // Check buffer capacity
@@ -111,7 +114,7 @@ impl WasmGuest {
         }
 
         self.memory
-            .write(&mut self.store, name_ptr, name)
+            .write(&mut self.store, buf_ptr, name)
             .map_err(|e| AppError::WasmGuest(format!("failed to write input: {}", e)))?;
 
         self.memory
@@ -141,7 +144,7 @@ impl WasmGuest {
 
         let mut output = vec![0u8; output_len as usize];
         self.memory
-            .read(&mut self.store, name_ptr, &mut output)
+            .read(&mut self.store, buf_ptr, &mut output)
             .map_err(|e| AppError::WasmGuest(format!("failed to read output: {}", e)))?;
 
         Ok(output)

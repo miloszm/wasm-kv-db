@@ -304,7 +304,7 @@ async fn call_reducer<T: DeserializeOwned>(
 
 /*
 
-$./target/debug/raffle-cli create --raffle-id raffle_125 --total-tickets 100
+$./target/debug/raffle-cli --caller admin create --raffle-id raffle_125 --total-tickets 100
 Raffle raffle_125 created with 100 tickets
 $./target/debug/raffle-cli --caller user_001 buy --raffle-id raffle_125 --quantity 1
 Purchased 1 ticket(s)! 99 remaining

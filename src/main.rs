@@ -7,7 +7,7 @@ use axum::{
     Router,
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, put},
+    routing::{get, post},
 };
 use tokio::signal;
 use tracing::{info, warn};
@@ -31,7 +31,7 @@ async fn main() -> Result<(), AppError> {
     // possibly default guests should be provided for new tenants
     state.load_wasm_guest(
         "t01",
-        "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
+        "wasm-guests/raffle/target/wasm32-unknown-unknown/debug/raffle.wasm",
         state.storage.clone(),
         "admin",
     )?;
@@ -40,7 +40,7 @@ async fn main() -> Result<(), AppError> {
         .route("/health", get(health_check))
         .route("/kv", get(list_keys))
         .route("/kv/:tenant/:key", get(get_value))
-        .route("/kvexec/:tenant/:name/:user", put(execute))
+        .route("/kvexec/:tenant/:name/:user", post(execute))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;

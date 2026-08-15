@@ -15,11 +15,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        Self {
-            storage: Storage::new(),
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, AppError> {
+        Ok(Self {
+            storage: Storage::new_with_persistence(path)?,
             wasm_guests: Arc::new(DashMap::new()),
-        }
+        })
     }
 
     pub fn load_wasm_guest(

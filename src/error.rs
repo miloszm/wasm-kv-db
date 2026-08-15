@@ -6,6 +6,9 @@ pub enum AppError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    #[error("DB error: {0}")]
+    Db(#[from] rocksdb::Error),
+
     #[error("Wasm error: {0}")]
     Wasm(#[from] wasmtime::Error),
 
@@ -51,6 +54,7 @@ impl AppError {
             AppError::OutOfMemory => -4,
             AppError::PermissionDenied => -5,
             AppError::Io(_)
+            | AppError::Db(_)
             | AppError::Wasm(_)
             | AppError::WasmGuest(_)
             | AppError::Serialization(_)

@@ -5,7 +5,9 @@ use wasm_kv_db::{AppError, Storage};
 
 #[test]
 pub fn test_wasm_basic_guest() -> Result<(), AppError> {
-    let storage = Storage::new();
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+    let path = temp_dir.path().join("rocksdb");
+    let storage = Storage::new_with_persistence(path)?;
     let mut guest = load_guest(storage.clone(), "simple", "admin");
 
     let name = b"guest".to_vec();

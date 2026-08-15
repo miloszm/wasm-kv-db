@@ -1,9 +1,18 @@
-use reqwest;
-use serde::{Deserialize, Serialize};
-use rmp_serde::{Deserializer, Serializer};
-use std::io::Cursor;
 use clap::{Parser, Subcommand};
+use reqwest;
+use rmp_serde::{Deserializer, Serializer};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::io::Cursor;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenericRequest {
+    pub tenant_id: String,
+    pub reducer_name: String,
+    pub reducer_args: Vec<u8>, // MessagePack serialized args
+    pub caller_id: String,
+    pub timestamp: u64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuyTicketArgs {
@@ -79,7 +88,7 @@ struct Cli {
     #[arg(short, long, default_value = "t01")]
     tenant: String,
 
-    #[arg(short, long, default_value = "user_123")]
+    #[arg(short, long, default_value = "admin")]
     caller: String,
 
     #[command(subcommand)]
@@ -136,7 +145,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host_url = format!("{}/kvexec", cli.host);
 
     match cli.command {
-        Commands::Create { raffle_id, total_tickets, end_time } => {
+        Commands::Create {
+            raffle_id,
+            total_tickets,
+            end_time,
+        } => {
             let args = CreateRaffleArgs {
                 raffle_id,
                 total_tickets,
@@ -149,12 +162,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &cli.caller,
                 "create_raffle",
                 &to_msgpack(&args),
-            ).await?;
+            )
+            .await?;
 
             println!("{}", result.message);
         }
 
-        Commands::Buy { raffle_id, user_id, quantity } => {
+        Commands::Buy {
+            raffle_id,
+            user_id,
+            quantity,
+        } => {
             let args = BuyTicketArgs {
                 raffle_id,
                 user_id,
@@ -167,7 +185,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &cli.caller,
                 "buy_ticket",
                 &to_msgpack(&args),
-            ).await?;
+            )
+            .await?;
 
             if result.success {
                 println!("{}", result.message);
@@ -186,12 +205,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &cli.caller,
                 "draw_winner",
                 &to_msgpack(&args),
-            ).await?;
+            )
+            .await?;
 
             if result.success {
                 println!("{}", result.message);
                 if let Some(winner) = result.winner {
-                    println!("   🏆 Winner: {}", winner);
+                    println!("Winner: {}", winner);
                 }
             } else {
                 println!("{}", result.message);
@@ -199,7 +219,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Status { raffle_id } => {
-            let args = GetRaffleStatusArgs { raffle_id: raffle_id.clone() };
+            let args = GetRaffleStatusArgs {
+                raffle_id: raffle_id.clone(),
+            };
             let result = call_reducer::<RaffleStatusResult>(
                 &client,
                 &host_url,
@@ -207,12 +229,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &cli.caller,
                 "get_raffle_status",
                 &to_msgpack(&args),
-            ).await?;
+            )
+            .await?;
 
             println!("   Raffle: {}", result.raffle_id);
             println!("   Tickets remaining: {}", result.tickets_left);
             println!("   Total entries: {}", result.total_entries);
-            println!("   Status: {}", if result.is_closed { "Closed" } else { "Open" });
+            println!(
+                "   Status: {}",
+                if result.is_closed { "Closed" } else { "Open" }
+            );
             if let Some(winner) = result.winner {
                 println!("   Winner: {}", winner);
             }
@@ -228,7 +254,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &cli.caller,
                 "list_raffles",
                 &[],
-            ).await?;
+            )
+            .await?;
 
             println!("📋 Raffles:");
             for raffle_id in result {
@@ -248,12 +275,18 @@ async fn call_reducer<T: DeserializeOwned>(
     reducer_name: &str,
     args_bytes: &[u8],
 ) -> Result<T, Box<dyn std::error::Error>> {
-    let request_bytes = to_msgpack(&args_bytes);
+    let request = GenericRequest {
+        tenant_id: tenant_id.to_string(),
+        reducer_name: reducer_name.to_string(),
+        reducer_args: args_bytes.to_vec(),
+        caller_id: caller_id.to_string(),
+        timestamp: 0,
+    };
 
-    println!("posting to {}", format!("{host_url}/{tenant_id}/{reducer_name}/{caller_id}"));
+    let request_bytes = to_msgpack(&request);
 
     let response = client
-        .post(format!("{host_url}/{tenant_id}/{reducer_name}/{caller_id}"))
+        .post(host_url)
         .header("Content-Type", "application/msgpack")
         .body(request_bytes)
         .send()
@@ -265,11 +298,11 @@ async fn call_reducer<T: DeserializeOwned>(
     }
 
     let response_bytes = response.bytes().await?;
+    println!("response_bytes={:?}", response_bytes.to_vec());
 
     let result: T = from_msgpack(&response_bytes);
     Ok(result)
 }
-
 
 // ./raffle-cli create --raffle-id raffle_123 --total-tickets 100
 

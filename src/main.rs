@@ -7,7 +7,7 @@ use axum::{
     Router,
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, put},
+    routing::{get, post},
 };
 use tokio::signal;
 use tracing::{info, warn};
@@ -26,21 +26,11 @@ async fn main() -> Result<(), AppError> {
     let db_path = std::env::var("WASM_KV_DB_PATH").unwrap_or(storage::default_db_path());
     let state = AppState::new(db_path)?;
 
-    // todo: test code to be moved away
-    // guests should be loaded by tenants via REST API
-    // possibly default guests should be provided for new tenants
-    state.load_wasm_guest(
-        "t01",
-        "wasm-guests/simple-guest/target/wasm32-unknown-unknown/debug/simple_guest.wasm",
-        state.storage.clone(),
-        "admin",
-    )?;
-
     let app = Router::new()
         .route("/health", get(health_check))
         .route("/kv", get(list_keys))
         .route("/kv/:tenant/:key", get(get_value))
-        .route("/kv/:tenant/:name", put(execute))
+        .route("/kvexec", post(execute))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;

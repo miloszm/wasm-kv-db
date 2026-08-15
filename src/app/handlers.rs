@@ -5,6 +5,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use tracing::info;
 
 /// GET /kv/{tenant}/{key}
 pub(crate) async fn get_value(
@@ -29,9 +30,10 @@ pub(crate) async fn get_value(
 /// Executes tenant's Wasm
 pub(crate) async fn execute(
     State(state): State<AppState>,
-    Path((tenant, name)): Path<(String, String)>,
+    Path((tenant, name, user)): Path<(String, String, String)>,
     body: Bytes,
 ) -> impl IntoResponse {
+    println!("execute");
     if let Some(mut guest) = state.wasm_guests.get_mut(&tenant) {
         let name_bytes = name.as_bytes();
         match guest.execute(&name_bytes, &body) {
@@ -39,7 +41,7 @@ pub(crate) async fn execute(
             Err(e) => {
                 eprintln!("Wasm execution failed: {}", e);
                 let err = ErrorResponse {
-                    error: format!("Guest execution failed for {tenant}/{name}"),
+                    error: format!("Guest execution failed for {tenant}/{name}/{user}"),
                 };
                 (StatusCode::OK, Json(err)).into_response()
             }

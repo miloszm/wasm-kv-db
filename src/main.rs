@@ -40,7 +40,7 @@ async fn main() -> Result<(), AppError> {
         .route("/health", get(health_check))
         .route("/kv", get(list_keys))
         .route("/kv/:tenant/:key", get(get_value))
-        .route("/kv/:tenant/:name", put(execute))
+        .route("/kvexec/:tenant/:name/:user", put(execute))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;

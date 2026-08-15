@@ -23,7 +23,8 @@ async fn main() -> Result<(), AppError> {
 
     info!("Starting Wasm KV Database...");
 
-    let state = AppState::new();
+    let db_path = std::env::var("WASM_KV_DB_PATH").unwrap_or(storage::default_db_path());
+    let state = AppState::new(db_path)?;
 
     // todo: test code to be moved away
     // guests should be loaded by tenants via REST API

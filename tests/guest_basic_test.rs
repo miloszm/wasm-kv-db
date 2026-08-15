@@ -3,8 +3,8 @@ mod common;
 use common::load_guest;
 use wasm_kv_db::{AppError, Storage};
 
-#[test]
-pub fn test_wasm_basic_guest() -> Result<(), AppError> {
+#[tokio::test]
+pub async fn test_wasm_basic_guest() -> Result<(), AppError> {
     let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
     let path = temp_dir.path().join("rocksdb");
     let storage = Storage::new_with_persistence(path)?;

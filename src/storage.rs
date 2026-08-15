@@ -15,6 +15,8 @@ pub struct Storage {
     cache: Arc<DashMap<String, Vec<u8>>>,
     db: Arc<DB>,
     write_tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
+    #[allow(unused)]
+    temp_dir: Option<Arc<TempDir>>,
 }
 
 impl Storage {
@@ -73,19 +75,26 @@ impl Storage {
             cache,
             db,
             write_tx: tx,
+            temp_dir: None,
         })
     }
 
     pub fn new() -> Self {
-        let opts = Options::default();
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+        let path = temp_dir.path().join("rocksdb");
+        std::fs::create_dir_all(&path).expect("Failed to create DB directory");
+
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
         let temp_dir = tempfile::tempdir().unwrap();
-        let db = DB::open(&opts, temp_dir.path()).unwrap();
+        let db = DB::open(&opts, &path).unwrap();
         let (tx, _rx) = mpsc::unbounded_channel();
 
         Self {
             cache: Arc::new(DashMap::new()),
             db: Arc::new(db),
             write_tx: tx,
+            temp_dir: Some(Arc::new(temp_dir)),
         }
     }
 

@@ -114,7 +114,7 @@ enum Commands {
         #[arg(short, long)]
         raffle_id: String,
 
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "")]
         user_id: String,
 
         #[arg(short, long, default_value = "1")]
@@ -170,12 +170,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Buy {
             raffle_id,
-            user_id,
+            user_id: _,
             quantity,
         } => {
             let args = BuyTicketArgs {
                 raffle_id,
-                user_id,
+                user_id: cli.caller.clone(),
                 quantity,
             };
             let result = call_reducer::<BuyTicketResult>(
@@ -209,7 +209,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
             if result.success {
-                println!("{}", result.message);
                 if let Some(winner) = result.winner {
                     println!("Winner: {}", winner);
                 }
@@ -298,18 +297,26 @@ async fn call_reducer<T: DeserializeOwned>(
     }
 
     let response_bytes = response.bytes().await?;
-    println!("response_bytes={:?}", response_bytes.to_vec());
 
     let result: T = from_msgpack(&response_bytes);
     Ok(result)
 }
 
-// ./raffle-cli create --raffle-id raffle_123 --total-tickets 100
+/*
 
-// ./raffle-cli buy --raffle-id raffle_123 --user-id user_456 --quantity 1
+$./target/debug/raffle-cli create --raffle-id raffle_125 --total-tickets 100
+Raffle raffle_125 created with 100 tickets
+$./target/debug/raffle-cli --caller user_001 buy --raffle-id raffle_125 --quantity 1
+Purchased 1 ticket(s)! 99 remaining
+Tickets remaining: 99
+$./target/debug/raffle-cli --caller user_002 buy --raffle-id raffle_125 --quantity 1
+Purchased 1 ticket(s)! 98 remaining
+Tickets remaining: 98
+$./target/debug/raffle-cli --caller user_003 buy --raffle-id raffle_125 --quantity 1
+Purchased 1 ticket(s)! 97 remaining
+Tickets remaining: 97
+$./target/debug/raffle-cli --caller admin draw --raffle-id raffle_125
+Winner: user_003
 
-// ./raffle-cli buy --raffle-id raffle_123 --user-id user_789 --quantity 5
+*/
 
-// ./raffle-cli draw --raffle-id raffle_123
-
-// ./raffle-cli list

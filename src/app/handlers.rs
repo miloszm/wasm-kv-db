@@ -47,7 +47,6 @@ pub(crate) async fn get_value(
 /// Executes tenant's Wasm
 pub(crate) async fn execute(State(state): State<AppState>, body: Bytes) -> impl IntoResponse {
     let request: GenericRequest = from_msgpack(body.as_ref());
-    println!("loading raffle.wasm with caller id: {}",request.caller_id.clone());
     match state.load_wasm_guest(
         "t01",
         "wasm-guests/raffle/target/wasm32-unknown-unknown/debug/raffle.wasm",
@@ -63,7 +62,6 @@ pub(crate) async fn execute(State(state): State<AppState>, body: Bytes) -> impl 
         let name_bytes = request.reducer_name.as_bytes();
         match guest.execute(&name_bytes, &request.reducer_args) {
             Ok(result) => {
-                println!("returning {:?}", result);
                 (StatusCode::OK, result).into_response()
             },
             Err(e) => {

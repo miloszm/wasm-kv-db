@@ -29,7 +29,11 @@ pub(crate) async fn get_value(
     State(state): State<AppState>,
     Path((tenant, key)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let full_key = format!("{}:{}", tenant, key);
+    let full_key = if tenant.is_empty() {
+        key.clone()
+    } else {
+        format!("{}:{}", tenant, key)
+    };
     let value = match state.storage.get(&full_key) {
         Ok(value) => value.clone(),
         Err(_) => {
@@ -61,9 +65,7 @@ pub(crate) async fn execute(State(state): State<AppState>, body: Bytes) -> impl 
     if let Some(mut guest) = state.wasm_guests.get_mut(&request.tenant_id) {
         let name_bytes = request.reducer_name.as_bytes();
         match guest.execute(&name_bytes, &request.reducer_args) {
-            Ok(result) => {
-                (StatusCode::OK, result).into_response()
-            },
+            Ok(result) => (StatusCode::OK, result).into_response(),
             Err(e) => {
                 eprintln!("Wasm execution failed: {}", e);
                 let err = ErrorResponse {

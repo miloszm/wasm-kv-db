@@ -34,11 +34,6 @@ pub struct DrawWinnerArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetRaffleStatusArgs {
-    pub raffle_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuyTicketResult {
     pub success: bool,
     pub message: String,
@@ -56,15 +51,6 @@ pub struct DrawWinnerResult {
     pub success: bool,
     pub winner: Option<String>,
     pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RaffleStatusResult {
-    pub raffle_id: String,
-    pub tickets_left: u32,
-    pub total_entries: u32,
-    pub winner: Option<String>,
-    pub is_closed: bool,
 }
 
 fn to_msgpack<T: Serialize>(value: &T) -> Vec<u8> {
@@ -114,9 +100,6 @@ enum Commands {
         #[arg(short, long)]
         raffle_id: String,
 
-        #[arg(short, long, default_value = "")]
-        user_id: String,
-
         #[arg(short, long, default_value = "1")]
         quantity: u32,
     },
@@ -126,15 +109,6 @@ enum Commands {
         #[arg(short, long)]
         raffle_id: String,
     },
-
-    /// Get raffle status
-    Status {
-        #[arg(short, long)]
-        raffle_id: String,
-    },
-
-    /// List all raffles
-    List,
 }
 
 #[tokio::main]
@@ -170,7 +144,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Buy {
             raffle_id,
-            user_id: _,
             quantity,
         } => {
             let args = BuyTicketArgs {
@@ -216,51 +189,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", result.message);
             }
         }
-
-        Commands::Status { raffle_id } => {
-            let args = GetRaffleStatusArgs {
-                raffle_id: raffle_id.clone(),
-            };
-            let result = call_reducer::<RaffleStatusResult>(
-                &client,
-                &host_url,
-                &cli.tenant,
-                &cli.caller,
-                "get_raffle_status",
-                &to_msgpack(&args),
-            )
-            .await?;
-
-            println!("   Raffle: {}", result.raffle_id);
-            println!("   Tickets remaining: {}", result.tickets_left);
-            println!("   Total entries: {}", result.total_entries);
-            println!(
-                "   Status: {}",
-                if result.is_closed { "Closed" } else { "Open" }
-            );
-            if let Some(winner) = result.winner {
-                println!("   Winner: {}", winner);
-            }
-        }
-
-        Commands::List => {
-            // This calls a reducer that returns a list of raffle IDs
-            // For simplicity, we'll just call a "list_raffles" reducer
-            let result = call_reducer::<Vec<String>>(
-                &client,
-                &host_url,
-                &cli.tenant,
-                &cli.caller,
-                "list_raffles",
-                &[],
-            )
-            .await?;
-
-            println!("📋 Raffles:");
-            for raffle_id in result {
-                println!("   - {}", raffle_id);
-            }
-        }
     }
 
     Ok(())
@@ -304,7 +232,7 @@ async fn call_reducer<T: DeserializeOwned>(
 
 /*
 
-$./target/debug/raffle-cli create --raffle-id raffle_125 --total-tickets 100
+$./target/debug/raffle-cli --caller admin create --raffle-id raffle_125 --total-tickets 100
 Raffle raffle_125 created with 100 tickets
 $./target/debug/raffle-cli --caller user_001 buy --raffle-id raffle_125 --quantity 1
 Purchased 1 ticket(s)! 99 remaining
@@ -319,4 +247,3 @@ $./target/debug/raffle-cli --caller admin draw --raffle-id raffle_125
 Winner: user_003
 
 */
-

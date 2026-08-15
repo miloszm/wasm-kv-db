@@ -247,8 +247,6 @@ fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
         return Err(ReducerError::Unauthorized);
     }
 
-    // todo: check raffle time
-
     // check if raffle is not closed
     let closed_key = format!("raffle:{}:closed", args.raffle_id);
     let mut closed_bytes = vec![0u8; 4];
@@ -293,7 +291,7 @@ fn buy_ticket(args: BuyTicketArgs) -> Result<BuyTicketResult, ReducerError> {
     Ok(BuyTicketResult {
         success: true,
         message: format!(
-            "Purchased {} ticket(s)! {} remaining",
+            "Purchased {} ticket(s) {} remaining",
             args.quantity, new_tickets_left
         ),
         tickets_left: new_tickets_left as u32,

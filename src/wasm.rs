@@ -224,7 +224,6 @@ impl WasmGuest {
         let value = match storage.get(&key) {
             Ok(v) => v,
             Err(_) => {
-                eprintln!("host_get: not found");
                 return Ok(-1);
             }
         };

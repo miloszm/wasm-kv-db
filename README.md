@@ -4,7 +4,7 @@ A lightweight, embeddable key-value database with Wasm guest support for custom 
 
 ## Introduction
 
-Several databses allow users to submit and run Wasm code, sometimes referred to as
+Several databases allow users to submit and run Wasm code, sometimes referred to as
 User-Defined Functions (UDFs).
 To such databases belong SingleStore, libSQL, ClickHouse, SpacetimeDB.
 There are also browser-first databases like Isar Plus, Lattice DB, MoltenDb.
@@ -27,35 +27,34 @@ Thus, "reducers" are not reducing anything, as the name rather suggests
 a function f(v[..]) => scalar. Nevertheless, the name "reducer" caught on and
 it will be used in this project as well.
 
-This project realizes the following vision:
-- reducers are Wasm functions, which together for a Wasm guest or Wasm module
+This (wasm-kv-db) project realizes the following vision:
+- reducers are Wasm functions, which together for a Wasm guest (Wasm module)
 - there is one Wasm module per tenant
-- tenancies are conceptually separate database realms, so tenants can see the database as their own area, independent from other tenants
+- tenancies are conceptually separate database realms, tenants can see the database as their own area, independent of other tenants
 - only reducers can read or write database
-- database is key-value and all access is cached via DashMap
-- database is persistent, all content of cache is continually written to the RocksDB database
-- cache is reloaded when system is restarted
-- deployed modules must expose the "execute" function
-- system host provides data manipulation functions to the Wasm guest and its reducers
-- the system also runs HTTP web server through which users can submit reducer calls
-- reference CLI tool to drive an example raffle application is provided
-- reference raffle guest code is provided and allows to create raffle, buy tickets and draw a winner
-- raffle functionality is shown in guest-test and via the CLI tool
+- reducers run sequentially, one at a time, in an uninterrupted way
+- database is key-value and all access to it is cached via DashMap (in essence, DashMap contains all the content at all times)
+- database is persistent, all content of cache is continually written to the RocksDB database in a background thread
+- cache is reloaded from persistent store when the system is restarted
+- deployed modules must expose the "execute" function that dispatches calls to reducers
+- system host provides data manipulation (host) functions to be used by the Wasm guest and its reducers
+- the system runs HTTP web server through which users can submit reducer calls and obtain responses
+- reference CLI tool to drive an example raffle application via HTTP is provided
+- reference raffle guest code is provided and allows to create a raffle, buy tickets and draw a winner
+- raffle functionality is shown in guest unit test as well as via the CLI tool
 - all data is passed via msgpack serialization format
-- guest always knows on behalf of which user it is running
+- guest always knows on behalf of which user it is running and can act accordingly
 
-The system is not aware of which applications its tenants are running. It allows users to pass byte buffers
-of serialized arguments and return values to executors provided by guests. Only tenant users
-and the guest code knows what user functionality the hosting database system is realizing.
-
-This approach allows database to amalgamate with business logic.
-Code and data are one, the database 'is' the application, or many applications.
+The system is not aware of what applications its tenants are running. It allows users to pass byte buffers
+of serialized arguments and return values to/from executors provided by the guests. Only tenants/users
+and the guest code is aware of what user functionality the hosting database system is realizing. This approach allows 
+database to amalgamate with business logic. The database 'is' the application, or many applications.
 
 There is no middle tier. Instead of a client talking to a server that talks to a DB,
 here the client calls a reducer directly on the DB. Latency and complexity are
 drastically reduced.
 
-Reducers run sequentially, one at a time, there are no race condiction, no risk of
+Reducers run sequentially, one at a time, there are no race conditions, no risk of
 two user overwriting each other's data.
 
 Because of the cache, reads and writes are extremely fast. All data is kept in the cache

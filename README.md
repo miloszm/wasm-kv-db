@@ -195,12 +195,12 @@ being aware of it.
 
 The following API is provided:
 
-GET  /health            - health check of the HTTP service
-GET  /kv                - returns a list of all keys in the cache, independent of tenant
-GET  /kv/{tenant}/{key} - returns value of particular key
-POST /kvexec            - executes particular reducer, see below for more information
+- GET  **/health**            - health check of the HTTP service
+- GET  **/kv**                - returns a list of all keys in the cache, independent of tenant
+- GET  **/kv/{tenant}/{key}** - returns value of particular key
+- POST **/kvexec**            - executes particular reducer, see below for more information
 
-kvexec requires the following structure to be sent in a MessagePack-serialized format.
+kvexec requires the following structure to be sent in a MessagePack-serialized format as body to the POST request:
 
 ```rust
 pub struct GenericRequest {
@@ -226,7 +226,7 @@ $> curl localhost:8080/kv//raffle:raffle_1:tickets_left
 ```
 
 Note that in the last example tenant is empty.
-Note that to use kvexec, because of its serialized body structure requirement, you need to use the provided cli_client, for example as follows:
+Note that to try `kvexec`, because of its serialized body structure requirement, you need to use the provided cli_client, for example as follows:
 
 ```
 $> cd cli_client
@@ -235,7 +235,14 @@ $> cargo b
 
 $> cd target/debug
 
-$> ./raffle-cli --caller admin create --raffle-id raffle_1 --total-tickets 100
+$> ./raffle-cli --tenant t01 --caller admin create --raffle-id raffle_1 --total-tickets 100
 Raffle raffle_1 created with 100 tickets
 
 ```
+
+In this last example, raffle-cli sends request `POST /kvexec` with a body set to a serialized structure with the following values:
+- tenant_id: "t01"
+- reducer_name: "create_raffle"
+- reducer_args: serialized struct CreateRaffleArgs
+- caller_id: "admin"
+- timestamp: 0
